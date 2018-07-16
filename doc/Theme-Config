@@ -89,13 +89,28 @@ Section                                      Meaning
 [Toolbar]                                    A toolbar. Also its handle and
                                              separator.
 
-[ToolbarButton]                              Panel for a tool button on a toolbar.
-                                             This section is optional and can be
-                                             omitted. If present, it will take all
-                                             of its variables from PanelButtonTool,
-                                             except for its text colors, text
-                                             shadow, and (indicator, frame and
-                                             interior) elements.
+[ToolbarButton]                              Panel for a tool button on a stylable
+                                             toolbar. This section is optional and
+                                             can be omitted. If present, it will
+                                             take all of its variables from
+                                             PanelButtonTool, except for its text
+                                             colors, text shadow, and (indicator,
+                                             frame and interior) elements.
+
+[ToolbarComboBox]                            Exactly like ToolbarButton but for
+                                             combo boxes on stylable toolbars.
+
+[ToolbarLineEdit]                            Panel for a line-edit on a stylable
+                                             toolbar. This section is optional and
+                                             can be omitted. If present, it will take
+                                             all of its variables from LineEdit, except
+                                             for its frame and interior elements.
+
+                                             Also, note that the text color of such a
+                                             line-edit is always the text color of the
+                                             stylable toolbar behind it. Therefore,
+                                             its interior (if any) should have a good
+                                             contrast with that color.
 
 [Scrollbar]                                  Scrollbar increase/decrease
                                              indicators (arrows).
@@ -103,6 +118,14 @@ Section                                      Meaning
 [ScrollbarGroove]                            The groove of a scrollbar.
 
 [ScrollbarSlider]                            A scrollbar slider.
+
+[ScrollbarTransientSlider]                   An optional section for transient
+                                             scrollbars (see "transient_scrollbar" below).
+                                             It takes all of its values from
+                                             "ScrollbarSlider", except for its frame and
+                                             interior elements. It is useful when the
+                                             ordinary scrollbar slider elements are not good
+                                             enough with transient scrollbars.
 
 [Slider]                                     A slider (a classic widget for
                                              controlling a bounded value).
@@ -211,7 +234,7 @@ x11drag                           string              Drag windows from contents
                                                         true (the same as "all" -- default)
                                                         false (the same as "none")
 
-                                                      "x11drag" is independent of X11 on wayland.
+                                                      "x11drag" is disabled on wayland.
 
 alt_mnemonic                      true/false          Show underlines when Alt is pressed?
                                                       True by default.
@@ -421,6 +444,9 @@ scrollable_menu                   true/false          Should (big) menus be scro
                                                       bottom? False by default, which means
                                                       all menu-items are shown.
 
+menu_separator_height             integer             The height of menu separators. 10 by
+                                                      default and always between 1 and 16 px.
+
 submenu_overlap                   integer             The horizontal overlap between a
                                                       submenu and its parent menu. The
                                                       default is 0. It cannot be greater than
@@ -460,6 +486,8 @@ reduce_window_opacity             integer             If "translucent_windows" i
                                                       or not. The default value is 0 and the
                                                       maximum is 90.
 
+reduce_menu_opacity               integer             As above but for menus.
+
 opaque                            string list         A comma-separated list of
                                                       executables, whose apps should not
                                                       have window translucency. It has
@@ -493,6 +521,11 @@ animate_states                    true/false          Animate the state change i
                                                       buttons, combo boxes, line-edits and
                                                       scroll views. For buttons, the animation
                                                       happens only under the mouse cursor.
+
+no_inactiveness                  true/false           Ignore the inactive state? The purpose
+                                                      of this key is more flexibility  with
+                                                      themes that distinguish between active
+                                                      and inactive states.
 
 no_window_pattern                 true/false          Do not draw window/dialog tiling
                                                       patterns? The purpose of this key is
@@ -778,6 +811,10 @@ middle_click_scroll               true/false          Should the scroll slider j
                                                       position when the scrollbar is middle
                                                       clicked? The default is false and the
                                                       jump is done by a left click.
+
+opaque_colors                     true/false          Should all (text) colors be opaque? By
+                                                      default, (text) colors are defined by
+                                                      the theme and can be translucent.
 
                            **********************
                            *** Other Sections ***

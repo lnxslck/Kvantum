@@ -1,4 +1,4 @@
-# Kvantum [![Build Status](https://travis-ci.org/nomad-desktop/Kvantum.svg?branch=master)](https://travis-ci.org/nomad-desktop/Kvantum)
+# Kvantum
 
 ## Overview
 

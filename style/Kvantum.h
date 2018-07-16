@@ -31,6 +31,10 @@
 #include "animation/animation.h"
 #endif
 
+// definitions shared by source files
+#define SLIDER_TICK_SIZE 5 // 10 at most
+#define ANIMATION_FRAME 40 // in ms
+
 class QSvgRenderer;
 
 namespace Kvantum {
@@ -186,15 +190,23 @@ class Style : public QCommonStyle {
     /* Return the state of the given widget. */
     QString getState(const QStyleOption *option, const QWidget *widget) const;
     /* Return the frame spec of the given widget from the theme config file. */
-    inline frame_spec getFrameSpec(const QString &widgetName) const;
+    frame_spec getFrameSpec(const QString &widgetName) const {
+      return settings_->getFrameSpec(widgetName);
+    }
     /* Return the interior spec of the given widget from the theme config file. */
-    inline interior_spec getInteriorSpec(const QString &widgetName) const;
+    interior_spec getInteriorSpec(const QString &widgetName) const {
+      return settings_->getInteriorSpec(widgetName);
+    }
     /* Return the indicator spec of the given widget from the theme config file. */
-    inline indicator_spec getIndicatorSpec(const QString &widgetName) const;
+    indicator_spec getIndicatorSpec(const QString &widgetName) const {
+      return settings_->getIndicatorSpec(widgetName);
+    }
     /* Return the label (text+icon) spec of the given widget from the theme config file. */
-    inline label_spec getLabelSpec(const QString &widgetName) const;
+    label_spec getLabelSpec(const QString &widgetName) const;
     /* Return the size spec of the given widget from the theme config file */
-    inline size_spec getSizeSpec(const QString &widgetName) const;
+    size_spec getSizeSpec(const QString &widgetName) const {
+      return settings_->getSizeSpec(widgetName);
+    }
 
     /* Generic method that draws a frame. */
     void renderFrame(QPainter *painter,
@@ -228,7 +240,8 @@ class Style : public QCommonStyle {
                          const indicator_spec &dspec, // indicator spec
                          const QString &element, // indicator SVG element
                          Qt::LayoutDirection ld = Qt::LeftToRight,
-                         Qt::Alignment alignment = Qt::AlignCenter) const;
+                         Qt::Alignment alignment = Qt::AlignCenter,
+                         int vOffset = 0) const;
 
     /* Generic method that draws a label (text and/or icon) inside the frame. */
     void renderLabel(
@@ -283,15 +296,15 @@ class Style : public QCommonStyle {
                          // use real heights of multiline texts?
                          bool realHeight = false) const;
 
-    /* Return a normalized rect, i.e. a square. */
-    QRect squaredRect(const QRect &r) const;
-
     /* Return the remaining QRect after subtracting the frames. */
     QRect interiorRect(const QRect &bounds, const frame_spec &fspec) const;
     /* Return the remaining QRect after subtracting the frames and text margins. */
     QRect labelRect(const QRect &bounds, const frame_spec &f,const label_spec &t) const {
       return interiorRect(bounds,f).adjusted(t.left,t.top,-t.right,-t.bottom);
     }
+
+    QWidget* getParent(const QWidget *widget, int level) const;
+    bool enoughContrast (const QColor& col1, const QColor& col2) const;
 
     /* Can an expanded border be drawn for this frame? */
     bool hasExpandedBorder(const frame_spec &fspec) const;
@@ -333,6 +346,12 @@ class Style : public QCommonStyle {
     {
       forceButtonTextColor(const_cast<QWidget*>(widget), col);
     }
+
+    /* Gets color from #rrggbbaa. */
+    QColor getFromRGBA(const QString &str) const;
+
+    /* Is the window of this widget inactive? */
+    bool isWidgetInactive(const QWidget *widget) const;
 
     /* Used only with combo menus. */
     bool hasParent(const QWidget *widget, const char *className) const

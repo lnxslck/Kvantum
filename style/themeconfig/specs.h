@@ -104,6 +104,8 @@ typedef struct {
   /* reduce window opacity by this percentage
      (if window translucency is enabled)? */
   int reduce_window_opacity;
+  /* the same as above but for menus */
+  int reduce_menu_opacity;
   /* list of apps that shouldn't have window translucency */
   QStringList opaque;
   /* blur what is behind translucent windows if possible? */
@@ -113,10 +115,13 @@ typedef struct {
   /* should buttons and comboboxes be animated
      under the cursor when their state changes? */
   bool animate_states;
+  /* disable inactiveness */
+  bool no_inactiveness;
   /* disable window/dialog patterns */
   bool no_window_pattern;
   /* depth of menu shadows */
   int menu_shadow_depth;
+  int menu_separator_height;
   /* overlap between a submenu and its parent */
   int submenu_overlap;
   /* milliseconds to wait before opening a submenu
@@ -240,6 +245,8 @@ typedef struct {
   /* blur the region behind a window background that is
      explicitly made translucent by its app? */
   bool blur_translucent;
+  /* should all texts have opaque colors? */
+  bool opaque_colors;
   /* transparent background for the label of KTitleWidget
      (nice when the window bg has a gradient) */
   bool transparent_ktitle_label;
@@ -467,12 +474,15 @@ static inline void default_theme_spec(theme_spec &tspec) {
   tspec.composite = false;
   tspec.translucent_windows = false;
   tspec.reduce_window_opacity = 0;
+  tspec.reduce_menu_opacity = 0;
   tspec.opaque = QStringList() << "kscreenlocker" << "wine";
   tspec.blurring = false;
   tspec.popup_blurring = false;
   tspec.animate_states = false;
+  tspec.no_inactiveness = false;
   tspec.no_window_pattern = false;
   tspec.menu_shadow_depth = 0;
+  tspec.menu_separator_height = 10;
   tspec.submenu_overlap = 0;
   tspec.submenu_delay = 250;
   tspec.tooltip_shadow_depth = 0;
@@ -547,6 +557,7 @@ static inline void default_hacks_spec(hacks_spec &hspec) {
   hspec.transparent_pcmanfm_view = false;
   hspec.lxqtmainmenu_iconsize = 0;
   hspec.blur_translucent = false;
+  hspec.opaque_colors = false;
   hspec.transparent_ktitle_label = false;
   hspec.transparent_menutitle = false;
   hspec.kcapacitybar_as_progressbar = false;

@@ -833,6 +833,7 @@ void KvantumManager::defaultThemeButtons()
     ui->checkBoxIconlessMenu->setChecked (defaultSettings.value ("iconless_menu").toBool());
     ui->checkBoxToolbar->setChecked (defaultSettings.value ("single_top_toolbar").toBool());
     ui->checkBoxTint->setChecked (defaultSettings.value ("no_selection_tint").toBool());
+    ui->checkBoxOpaqueColors->setChecked (defaultSettings.value ("opaque_colors").toBool());
     int tmp = 0;
     if (defaultSettings.contains ("tint_on_mouseover")) // it's 0 by default
         tmp = qMin (qMax (defaultSettings.value ("tint_on_mouseover").toInt(), 0), 100);
@@ -852,6 +853,7 @@ void KvantumManager::defaultThemeButtons()
     ui->checkBoxNoComposite->setChecked (!composited);
     ui->checkBoxAnimation->setChecked (defaultSettings.value ("animate_states").toBool());
     ui->checkBoxPattern->setChecked (defaultSettings.value ("no_window_pattern").toBool());
+    ui->checkBoxInactiveness->setChecked (defaultSettings.value ("no_inactiveness").toBool());
     ui->checkBoxleftTab->setChecked (defaultSettings.value ("left_tabs").toBool());
     ui->checkBoxJoinTab->setChecked (defaultSettings.value ("joined_inactive_tabs").toBool());
     if (defaultSettings.contains ("scroll_arrows")) // it's true by default
@@ -924,6 +926,11 @@ void KvantumManager::defaultThemeButtons()
     if (defaultSettings.contains ("reduce_window_opacity")) // it's 0 by default
         tmp = qMin (qMax (defaultSettings.value ("reduce_window_opacity").toInt(), 0), 90);
     ui->spinReduceOpacity->setValue (tmp);
+
+    tmp = 0;
+    if (defaultSettings.contains ("reduce_menu_opacity")) // it's 0 by default
+        tmp = qMin (qMax (defaultSettings.value ("reduce_menu_opacity").toInt(), 0), 90);
+    ui->spinReduceMenuOpacity->setValue (tmp);
 
     tmp = 16;
     if (defaultSettings.contains ("small_icon_size"))
@@ -1136,6 +1143,8 @@ void KvantumManager::tabChanged (int index)
                     ui->checkBoxAnimation->setChecked (themeSettings.value ("animate_states").toBool());
                 if (themeSettings.contains ("no_window_pattern"))
                     ui->checkBoxPattern->setChecked (themeSettings.value ("no_window_pattern").toBool());
+                if (themeSettings.contains ("no_inactiveness"))
+                    ui->checkBoxInactiveness->setChecked (themeSettings.value ("no_inactiveness").toBool());
                 if (themeSettings.contains ("left_tabs"))
                     ui->checkBoxleftTab->setChecked (themeSettings.value ("left_tabs").toBool());
                 if (themeSettings.contains ("joined_inactive_tabs"))
@@ -1222,6 +1231,12 @@ void KvantumManager::tabChanged (int index)
                     rwo = qMin (qMax (rwo, 0), 90);
                     ui->spinReduceOpacity->setValue (rwo);
                 }
+                if (themeSettings.contains ("reduce_menu_opacity"))
+                {
+                    int rmo = themeSettings.value ("reduce_menu_opacity").toInt();
+                    rmo = qMin (qMax (rmo, 0), 90);
+                    ui->spinReduceMenuOpacity->setValue (rmo);
+                }
                 if (themeSettings.contains ("small_icon_size"))
                 {
                     int icnSize = themeSettings.value ("small_icon_size").toInt();
@@ -1299,6 +1314,7 @@ void KvantumManager::tabChanged (int index)
                 ui->checkBoxIconlessMenu->setChecked (themeSettings.value ("iconless_menu").toBool());
                 ui->checkBoxToolbar->setChecked (themeSettings.value ("single_top_toolbar").toBool());
                 ui->checkBoxTint->setChecked (themeSettings.value ("no_selection_tint").toBool());
+                ui->checkBoxOpaqueColors->setChecked (themeSettings.value ("opaque_colors").toBool());
                 int tmp = 0;
                 if (themeSettings.contains ("tint_on_mouseover"))
                     tmp = qMin (qMax (themeSettings.value ("tint_on_mouseover").toInt(), 0), 100);
@@ -1972,6 +1988,7 @@ void KvantumManager::writeConfig()
         hackKeys.insert("iconless_menu", boolToStr (ui->checkBoxIconlessMenu->isChecked()));
         hackKeys.insert("single_top_toolbar", boolToStr (ui->checkBoxToolbar->isChecked()));
         hackKeys.insert("no_selection_tint", boolToStr (ui->checkBoxTint->isChecked()));
+        hackKeys.insert("opaque_colors", boolToStr (ui->checkBoxOpaqueColors->isChecked()));
         hackKeys.insert("tint_on_mouseover", str.setNum (ui->spinTint->value()));
         hackKeys.insert("disabled_icon_opacity", str.setNum (ui->spinOpacity->value()));
         hackKeys.insert("lxqtmainmenu_iconsize", str.setNum (ui->spinLxqtMenu->value()));
@@ -1979,6 +1996,7 @@ void KvantumManager::writeConfig()
         generalKeys.insert("composite", boolToStr (!ui->checkBoxNoComposite->isChecked()));
         generalKeys.insert("animate_states", boolToStr (ui->checkBoxAnimation->isChecked()));
         generalKeys.insert("no_window_pattern", boolToStr (ui->checkBoxPattern->isChecked()));
+        generalKeys.insert("no_inactiveness", boolToStr (ui->checkBoxInactiveness->isChecked()));
         generalKeys.insert("left_tabs", boolToStr (ui->checkBoxleftTab->isChecked()));
         generalKeys.insert("joined_inactive_tabs", boolToStr (ui->checkBoxJoinTab->isChecked()));
         generalKeys.insert("scroll_arrows", boolToStr (!ui->checkBoxNoScrollArrow->isChecked()));
@@ -2007,6 +2025,7 @@ void KvantumManager::writeConfig()
         generalKeys.insert("hide_combo_checkboxes", boolToStr (ui->checkBoxHideComboCheckboxes->isChecked()));
         generalKeys.insert("translucent_windows", boolToStr (ui->checkBoxTrans->isChecked()));
         generalKeys.insert("reduce_window_opacity", str.setNum (ui->spinReduceOpacity->value()));
+        generalKeys.insert("reduce_menu_opacity", str.setNum (ui->spinReduceMenuOpacity->value()));
         generalKeys.insert("popup_blurring", boolToStr (ui->checkBoxBlurPopup->isChecked()));
         generalKeys.insert("blurring", boolToStr (ui->checkBoxBlurWindow->isChecked()));
         generalKeys.insert("small_icon_size", str.setNum (ui->spinSmall->value()));
@@ -2029,6 +2048,7 @@ void KvantumManager::writeConfig()
         if (themeSettings.value ("normal_default_pushbutton").toBool() != ui->checkBoxNormalBtn->isChecked()
             || themeSettings.value ("iconless_pushbutton").toBool() != ui->checkBoxIconlessBtn->isChecked()
             || themeSettings.value ("middle_click_scroll").toBool() != ui->checkBoxScrollJump->isChecked()
+            || themeSettings.value ("opaque_colors").toBool() != ui->checkBoxOpaqueColors->isChecked()
             || qMin(qMax(themeSettings.value ("tint_on_mouseover").toInt(),0),100) != ui->spinTint->value()
             || qMin(qMax(themeSettings.value ("disabled_icon_opacity").toInt(),0),100) != ui->spinOpacity->value())
         {
@@ -2051,6 +2071,7 @@ void KvantumManager::writeConfig()
         if (themeSettings.value ("composite").toBool() == ui->checkBoxNoComposite->isChecked()
             || themeSettings.value ("translucent_windows").toBool() != ui->checkBoxTrans->isChecked()
             || qMin(qMax(themeSettings.value ("reduce_window_opacity").toInt(),0),90) != ui->spinReduceOpacity->value()
+            || qMin(qMax(themeSettings.value ("reduce_menu_opacity").toInt(),0),90) != ui->spinReduceMenuOpacity->value()
             || toDrag(themeSettings.value ("x11drag").toString()) != ui->comboX11Drag->currentIndex()
             || themeSettings.value ("inline_spin_indicators").toBool() != ui->checkBoxInlineSpin->isChecked()
             || themeSettings.value ("vertical_spin_indicators").toBool() != ui->checkBoxVSpin->isChecked()
@@ -2058,6 +2079,7 @@ void KvantumManager::writeConfig()
             || themeSettings.value ("hide_combo_checkboxes").toBool() != ui->checkBoxHideComboCheckboxes->isChecked()
             || themeSettings.value ("animate_states").toBool() != ui->checkBoxAnimation->isChecked()
             || themeSettings.value ("no_window_pattern").toBool() != ui->checkBoxPattern->isChecked()
+            || themeSettings.value ("no_inactiveness").toBool() != ui->checkBoxInactiveness->isChecked()
             || themeSettings.value ("left_tabs").toBool() != ui->checkBoxleftTab->isChecked()
             || themeSettings.value ("joined_inactive_tabs").toBool() != ui->checkBoxJoinTab->isChecked()
             || themeSettings.value ("scroll_arrows").toBool() == ui->checkBoxNoScrollArrow->isChecked()
@@ -2343,6 +2365,8 @@ void KvantumManager::restoreDefault()
 /*************************/
 void KvantumManager::notCompisited (bool checked)
 {
+    ui->reduceMenuOpacityLabel->setEnabled (!checked);
+    ui->spinReduceMenuOpacity->setEnabled (!checked);
     ui->checkBoxBlurPopup->setEnabled (!checked && !ui->checkBoxBlurWindow->isChecked());
     ui->checkBoxTrans->setEnabled (!checked);
     isTranslucent (!checked && ui->checkBoxTrans->isChecked());
@@ -2395,7 +2419,7 @@ void KvantumManager::respectDE (bool checked)
         QSet<QByteArray> gtkDesktops = QSet<QByteArray>() << "gnome" << "unity" << "pantheon";
         if (gtkDesktops.contains(desktop_))
         {
-            ui->labelX11Drag->setEnabled (!checked);
+            //ui->labelX11Drag->setEnabled (!checked);
             //ui->comboX11Drag->setEnabled (!checked);
             ui->checkBoxIconlessBtn->setEnabled (!checked);
             ui->checkBoxIconlessMenu->setEnabled (!checked);
@@ -2405,8 +2429,8 @@ void KvantumManager::respectDE (bool checked)
                                                && !checked);
             ui->checkBoxTrans->setEnabled (!ui->checkBoxNoComposite->isChecked() && !checked);
             bool enableTrans (!ui->checkBoxNoComposite->isChecked()
-                             && ui->checkBoxTrans->isChecked()
-                             && !checked);
+                              && ui->checkBoxTrans->isChecked()
+                              && !checked);
             ui->opaqueLabel->setEnabled (enableTrans);
             ui->opaqueEdit->setEnabled (enableTrans);
             ui->reduceOpacityLabel->setEnabled(enableTrans);

@@ -135,6 +135,12 @@ frame_spec ThemeConfig::getFrameSpec(const QString &elementName)
   QString name = elementName;
   if (name == "ToolbarButton")
     name = "PanelButtonTool";
+  /* and the same for ToolbarComboBox */
+  else if (name == "ToolbarComboBox")
+    name = "ComboBox";
+  /* and a similar thing is true for ToolbarLineEdit */
+  else if (name == "ToolbarLineEdit")
+    name = "LineEdit";
 
   v = getValue(name,"frame", i);
   r.hasFrame = v.toBool();
@@ -148,8 +154,11 @@ frame_spec ThemeConfig::getFrameSpec(const QString &elementName)
     {
       r.element = v.toString();
 
-      if (elementName == "ToolbarButton")
+      if (elementName == "ToolbarButton" || elementName == "ToolbarComboBox"
+          || elementName == "ToolbarLineEdit")
+      {
         i = getValue(name, "inherits").toString();
+      }
 
       v = getValue(name,"frame.top", i);
       r.top = qMax(v.toInt(),0);
@@ -233,6 +242,10 @@ interior_spec ThemeConfig::getInteriorSpec(const QString &elementName)
   QString name = elementName;
   if (name == "ToolbarButton")
     name = "PanelButtonTool";
+  else if (name == "ToolbarComboBox")
+    name = "ComboBox";
+  else if (name == "ToolbarLineEdit")
+    name = "LineEdit";
 
   v = getValue(name,"interior", i);
   r.hasInterior = v.toBool();
@@ -247,8 +260,11 @@ interior_spec ThemeConfig::getInteriorSpec(const QString &elementName)
     {
       r.element = v.toString();
 
-      if (elementName == "ToolbarButton")
+      if (elementName == "ToolbarButton" || elementName == "ToolbarComboBox"
+          || elementName == "ToolbarLineEdit")
+      {
         i = getValue(name, "inherits").toString();
+      }
 
       v = getValue(name,"interior.x.patternsize", i);
       r.px = qMax(v.toInt(),0);
@@ -281,6 +297,18 @@ indicator_spec ThemeConfig::getIndicatorSpec(const QString &elementName)
   if (name == "ToolbarButton")
   {
     name = "PanelButtonTool";
+    i = getValue(name, "inherits").toString();
+  }
+  /* and the same for ToolbarComboBox */
+  else if (name == "ToolbarComboBox")
+  {
+    name = "ComboBox";
+    i = getValue(name, "inherits").toString();
+  }
+  /* and the same for ToolbarLineEdit */
+  else if (name == "ToolbarLineEdit")
+  {
+    name = "LineEdit";
     i = getValue(name, "inherits").toString();
   }
   v = getValue(name,"indicator.size", i);
@@ -404,6 +432,16 @@ label_spec ThemeConfig::getLabelSpec(const QString &elementName)
     name = "PanelButtonTool";
     i = getValue(name, "inherits").toString();
   }
+  else if (name == "ToolbarComboBox")
+  {
+    name = "ComboBox";
+    i = getValue(name, "inherits").toString();
+  }
+  else if (name == "ToolbarLineEdit")
+  {
+    name = "LineEdit";
+    i = getValue(name, "inherits").toString();
+  }
 
   v = getValue(name,"text.margin", i);
   r.hasMargin = v.toBool();
@@ -453,6 +491,10 @@ size_spec ThemeConfig::getSizeSpec(const QString& elementName)
   QString name = elementName;
   if (name == "ToolbarButton")
     name = "PanelButtonTool";
+  else if (name == "ToolbarComboBox")
+    name = "ComboBox";
+  else if (name == "ToolbarLineEdit")
+    name = "LineEdit";
 
   QVariant v = getValue(name, "inherits");
   QString i = v.toString();
@@ -470,6 +512,7 @@ size_spec ThemeConfig::getSizeSpec(const QString& elementName)
     }
     else
       r.minH = qMax(v.toInt(),0);
+    r.minH += r.minH % 2; // for vertical centering
   }
 
   v = getValue(name,"min_width", i);
@@ -566,6 +609,10 @@ theme_spec ThemeConfig::getCompositeSpec()
   if (v.isValid() && r.composite)
     r.menu_shadow_depth = qMax(v.toInt(),0);
 
+  v = getValue("General","menu_separator_height");
+  if (v.isValid())
+    r.menu_separator_height = qMin(qMax(v.toInt(),1),16);
+
   v = getValue("General","tooltip_shadow_depth");
   if (v.isValid() && r.composite)
     r.tooltip_shadow_depth = qMax(v.toInt(),0);
@@ -591,6 +638,10 @@ theme_spec ThemeConfig::getThemeSpec()
   v = getValue("General","reduce_window_opacity");
   if (v.isValid())
     r.reduce_window_opacity = qMin(qMax(v.toInt(),0),90);
+
+  v = getValue("General","reduce_menu_opacity");
+  if (v.isValid())
+    r.reduce_menu_opacity = qMin(qMax(v.toInt(),0),90);
 
   v = getValue("General","x11drag");
   if (v.isValid()) // "WindowManager::DRAG_ALL" by default
@@ -866,6 +917,9 @@ theme_spec ThemeConfig::getThemeSpec()
   v = getValue("General","animate_states");
   r.animate_states = v.toBool();
 
+  v = getValue("General","no_inactiveness");
+  r.no_inactiveness = v.toBool();
+
   v = getValue("General","no_window_pattern");
   r.no_window_pattern = v.toBool();
 
@@ -994,6 +1048,10 @@ hacks_spec ThemeConfig::getHacksSpec() const
       r.blur_translucent = v.toBool();
     }
   }
+
+  v = getValue("Hacks","opaque_colors");
+  if (v.isValid())
+    r.opaque_colors = v.toBool();
 
   v = getValue("Hacks","transparent_ktitle_label");
   r.transparent_ktitle_label = v.toBool();
