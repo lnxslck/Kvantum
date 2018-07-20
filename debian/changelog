@@ -1,11 +1,5 @@
-kvantum (0.10.3ubuntu16.04) xenial; urgency=medium
+kvantum (0.10.7) nxos; urgency=medium
 
-  * initial release
+  * Kvantum 0.10.7.
 
- -- Alexey Varfolomeev <varlesh@gmail.com>  Tue, 17 Jan 2017 13:55:48 +0400
-
-kvantum (0.10.3) unstable; urgency=low
-
-  * See ChangeLog!
-
- -- Pedram Pourang <tsujan2000@gmail.com>  Thu, 05 Jan 2017 09:09:07 +0330
+ -- Uri Herrera <uri_herrera@nxos.org>  Thu, 19 Jul 2018 21:51:00 -0500
