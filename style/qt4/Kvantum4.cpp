@@ -902,11 +902,12 @@ bool Style::isStylableToolbar(const QWidget *w, bool allowInvisible) const
 
 QWidget *Style::getStylableToolbarContainer(const QWidget *w, bool allowInvisible) const
 {
-  if (!w) return NULL;
+  if (!w || qobject_cast<const QToolBar*>(w))
+    return NULL;
   QWidget *window = w->window();
   if (window == w) return NULL;
   if (isStylableToolbar(window, allowInvisible)) // detached toolbar
-    return w->window();
+    return window;
   foreach (QToolBar *tb, window->findChildren<QToolBar*>())
   {
     if (isStylableToolbar(tb, allowInvisible) && tb->isAncestorOf(w))
@@ -1403,6 +1404,7 @@ void Style::polish(QWidget *widget)
                          && (sa->inherits("Fm::DirTreeView") || (pw && pw->inherits("Fm::SidePane")))))))
         {
           QColor col = vp->palette().color(vp->backgroundRole());
+          QColor col1 = vp->palette().color(QPalette::Inactive, vp->backgroundRole());
           if (col.isValid())
           {
             QPalette palette;
@@ -1411,6 +1413,8 @@ void Style::polish(QWidget *widget)
               sb->setAutoFillBackground(true);
               palette = sb->palette();
               palette.setColor(sb->backgroundRole(), col);
+              if (col1.isValid() && col1 != col)
+                palette.setColor(QPalette::Inactive, sb->backgroundRole(), col1);
               sb->setPalette(palette);
             }
             if (QScrollBar *sb = sa->verticalScrollBar())
@@ -1418,6 +1422,8 @@ void Style::polish(QWidget *widget)
               sb->setAutoFillBackground(true);
               palette = sb->palette();
               palette.setColor(sb->backgroundRole(), col);
+              if (col1.isValid() && col1 != col)
+                palette.setColor(QPalette::Inactive, sb->backgroundRole(), col1);
               sb->setPalette(palette);
             }
             // FIXME: is this needed?
@@ -1629,10 +1635,16 @@ void Style::polish(QPalette &palette)
   col = getFromRGBA(cspec_.baseColor);
   if (col.isValid())
   {
+    if (col != Qt::transparent)
+      col.setAlpha(255); // no translucent base color
     palette.setColor(QPalette::Active,QPalette::Base,col);
     col1 = getFromRGBA(cspec_.inactiveBaseColor);
     if (col1.isValid())
+    {
+      if (col1 != Qt::transparent)
+        col1.setAlpha(255);
       palette.setColor(QPalette::Inactive,QPalette::Base,col1);
+    }
     else
       palette.setColor(QPalette::Inactive,QPalette::Base,col);
   }
@@ -2050,7 +2062,8 @@ bool Style::eventFilter(QObject *o, QEvent *e)
   case QEvent::StyleChange:
     if (QComboBox *combo = qobject_cast<QComboBox*>(w))
     {
-      if (qobject_cast<KvComboItemDelegate*>(combo->itemDelegate()))
+      if (combo->style() == this // WARNING: Otherwise, the delegate shouldn't be restored.
+          && qobject_cast<KvComboItemDelegate*>(combo->itemDelegate()))
       {
         /* QComboBoxPrivate::updateDelegate() won't work correctly
            on style change if the item delegate isn't restored here */
@@ -7662,6 +7675,10 @@ void Style::drawControl(ControlElement element,
 
       break;
     }
+
+    case CE_HeaderEmptyArea:
+      painter->fillRect(option->rect, option->palette.brush(QPalette::Base));
+      break;
 
     case CE_HeaderSection : {
       const QString group = "HeaderSection";

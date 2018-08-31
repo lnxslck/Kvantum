@@ -36,7 +36,7 @@ namespace KvManager {
 static const QStringList windowGroups = (QStringList() << "Window" << "WindowTranslucent"
                                                        << "Dialog" << "DialogTranslucent");
 
-KvantumManager::KvantumManager (const QString lang, QWidget *parent) : QMainWindow (parent), ui (new Ui::KvantumManager)
+KvantumManager::KvantumManager (const QString& lang, QWidget *parent) : QMainWindow (parent), ui (new Ui::KvantumManager)
 {
     lang_ = lang;
     ui->setupUi (this);
@@ -148,6 +148,12 @@ KvantumManager::KvantumManager (const QString lang, QWidget *parent) : QMainWind
         format.setAlphaBufferSize (8);
         window->setFormat (format);
     }
+
+    QIcon icn = QIcon::fromTheme ("kvantum");
+    if (icn.isNull())
+        icn = QIcon (":/Icons/kvantumpreview/data/kvantum.svg");
+    setWindowIcon (icn);
+    ui->preview->setIcon(icn);
 
     resize (sizeHint().expandedTo (QSize (600, 400)));
 }
@@ -1549,9 +1555,9 @@ void KvantumManager::updateThemeList (bool updateAppThemes)
                 else if (folder.endsWith ("#"))
                 {
                     /* see if there's a valid root installtion */
-                    QString folder_ = folder.left (folder.length() - 1);
-                    if (!rootThemeDir (folder_).isEmpty())
-                        list.append (folder_ + modifiedSuffix_);
+                    QString _folder = folder.left (folder.length() - 1);
+                    if (!rootThemeDir (_folder).isEmpty())
+                        list.append (_folder + modifiedSuffix_);
                 }
                 else
                 {
@@ -1647,12 +1653,14 @@ void KvantumManager::updateThemeList (bool updateAppThemes)
             }
         }
     }
-    list.append (rootList);
-    list.sort();
+    if (!rootList.isEmpty())
+        list.append (rootList);
+    if (!list.isEmpty())
+        list.sort();
 
     /* add the whole list to the combobox */
     bool hasDefaultThenme (false);
-    if (list.isEmpty() || !list.contains("Kvantum" + modifiedSuffix_))
+    if (list.isEmpty() || !list.contains ("Kvantum" + modifiedSuffix_))
     {
         list.prepend (kvDefault_);
         hasDefaultThenme = true;
@@ -2015,7 +2023,7 @@ void KvantumManager::writeConfig()
         generalKeys.insert("tooltip_delay", str.setNum (ui->spinTooltipDelay->value()));
         generalKeys.insert("submenu_delay", str.setNum (ui->spinSubmenuDelay->value()));
         generalKeys.insert("toolbutton_style", str.setNum (ui->comboToolButton->currentIndex()));
-        generalKeys.insert("x11drag", toStr((Drag)ui->comboX11Drag->currentIndex()));
+        generalKeys.insert("x11drag", toStr(static_cast<Drag>(ui->comboX11Drag->currentIndex())));
         generalKeys.insert("respect_DE", boolToStr (ui->checkBoxDE->isChecked()));
         generalKeys.insert("double_click", boolToStr (ui->checkBoxClick->isChecked()));
         generalKeys.insert("inline_spin_indicators", boolToStr (ui->checkBoxInlineSpin->isChecked()));
@@ -2456,8 +2464,9 @@ void KvantumManager::showWhatsThis()
 void KvantumManager::aboutDialog()
 {
     QMessageBox::about (this, tr ("About Kvantum Manager"),
-                        "<center><b><big>" + tr ("Kvantum Manager") + " 0.10.7</big></b><br><br>"
-                        + tr ("A tool for intsalling, selecting<br>and configuring <a href='https://github.com/tsujan/Kvantum'>Kvantum</a> themes") + "<br><br>"
+                        "<center><b><big>" + tr ("Kvantum Manager") + " "
+                        + qApp->applicationVersion() + "</big></b><br><br>"
+                        + tr ("A tool for installing, selecting<br>and configuring <a href='https://github.com/tsujan/Kvantum'>Kvantum</a> themes") + "<br><br>"
                         + tr ("Author: <a href='mailto:tsujan2000@gmail.com?Subject=My%20Subject'>Pedram Pourang (aka. Tsu Jan)</a> </center><br>"));
 }
 

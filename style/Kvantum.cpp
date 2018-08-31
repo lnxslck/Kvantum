@@ -35,6 +35,7 @@
 #include <QAbstractScrollArea>
 //#include <QAbstractButton>
 //#include <QAbstractItemView>
+#include <QHeaderView>
 #include <QDockWidget>
 #include <QDial>
 #include <QScrollBar>
@@ -95,7 +96,7 @@ bool Style::enoughContrast (const QColor& col1, const QColor& col2) const
   if (!col1.isValid() || !col2.isValid()) return false;
   qreal rl1 = luminance(col1);
   qreal rl2 = luminance(col2);
-  if ((qMax(rl1,rl2) + 0.05) / (qMin(rl1,rl2) + 0.05) < (qreal)MIN_CONTRAST_RATIO)
+  if ((qMax(rl1,rl2) + 0.05) / (qMin(rl1,rl2) + 0.05) < MIN_CONTRAST_RATIO)
     return false;
   return true;
 }
@@ -912,8 +913,8 @@ QList<int> Style::getShadow(const QString &widgetName, int thicknessH, int thick
         if (renderer)
         {
           br = renderer->boundsOnElement(element+"-shadow-hint-"+direction[i]);
-          shadow[i] = i%2 ? qRound((qreal)thicknessV*(br.height()/divisor))
-                          : qRound((qreal)thicknessH*(br.width()/divisor));
+          shadow[i] = i%2 ? qRound(static_cast<qreal>(thicknessV)*(br.height()/divisor))
+                          : qRound(static_cast<qreal>(thicknessH)*(br.width()/divisor));
         }
       }
     }
@@ -945,6 +946,7 @@ bool Style::isWidgetInactive(const QWidget *widget) const
       /* some widgets (like KCapacityBar in kdf) may be drawn while still invisible */
       && widget->isVisible()
       && !widget->window()->windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus)
+      && !widget->window()->windowFlags().testFlag(Qt::X11BypassWindowManagerHint)
       && !widget->isActiveWindow())
   {
     return true;
@@ -1016,12 +1018,13 @@ bool Style::isStylableToolbar(const QWidget *w, bool allowInvisible) const
 
 QWidget* Style::getStylableToolbarContainer(const QWidget *w, bool allowInvisible) const
 {
-  if (!w) return nullptr;
+  if (w == nullptr || qobject_cast<const QToolBar*>(w))
+    return nullptr;
   QWidget *window = w->window();
   if (window == w) return nullptr;
   if (isStylableToolbar(window, allowInvisible)) // detached toolbar
-    return w->window();
-  const QList<QToolBar*> toolbars = window->findChildren<QToolBar*>();
+    return window;
+  const QList<QToolBar*> toolbars = window->findChildren<QToolBar*>(QString(), Qt::FindDirectChildrenOnly);
   for (QToolBar *tb : toolbars)
   {
     if (isStylableToolbar(tb, allowInvisible) && tb->isAncestorOf(w))
@@ -1059,7 +1062,7 @@ bool Style::hasHighContrastWithContainer(const QWidget *w, const QColor color) c
   return false;
 }
 
-enum toolbarButtonKind
+enum groupedTBtnKind
 {
   tbLeft = -1,
   tbMiddle,
@@ -1080,11 +1083,11 @@ enum toolbarButtonKind
   return false;
 }*/
 
-static int whichToolbarButton(const QToolButton *tb, const QToolBar *toolBar)
+static int whichGroupedTBtn(const QToolButton *tb, const QWidget *parentBar)
 {
   int res = tbAlone;
 
-  if (!tb || !toolBar
+  if (!tb || !parentBar
       /* Although the toolbar extension button can be on the immediate right of
          the last toolbutton, there's a 1px gap between them. I see this as a
          Qt bug but because of it, the extension button should be excluded here. */
@@ -1093,20 +1096,20 @@ static int whichToolbarButton(const QToolButton *tb, const QToolBar *toolBar)
     return res;
   }
 
-  if (toolBar->orientation() == Qt::Horizontal)
-  {
+  //if (toolBar->orientation() == Qt::Horizontal)
+  //{
     QRect g = tb->geometry();
-    const QToolButton *left = qobject_cast<const QToolButton*>(toolBar->childAt (g.x()-1, g.y()));
+    const QToolButton *left = qobject_cast<const QToolButton*>(parentBar->childAt (g.x()-1, g.y()));
     if (left && left->objectName() == "qt_toolbar_ext_button")
       left = nullptr;
-    const QToolButton *right =  qobject_cast<const QToolButton*>(toolBar->childAt (g.x()+g.width()+1, g.y()));
+    const QToolButton *right =  qobject_cast<const QToolButton*>(parentBar->childAt (g.x()+g.width()+1, g.y()));
     if (right && right->objectName() == "qt_toolbar_ext_button")
       right = nullptr;
 
     /* only direct children should be considered */
-    if (left && left->parentWidget() != toolBar)
+    if (left && left->parentWidget() != parentBar)
       left = nullptr;
-    if (right && right->parentWidget() != toolBar)
+    if (right && right->parentWidget() != parentBar)
       right = nullptr;
 
     if (left && g.height() == left->height())
@@ -1118,7 +1121,7 @@ static int whichToolbarButton(const QToolButton *tb, const QToolBar *toolBar)
     }
     else if (right && g.height() == right->height())
       res = tbLeft;
-  }
+  //}
   // we don't group buttons on a vertical toolbar
   /*else
   {
@@ -1433,7 +1436,7 @@ void Style::forceButtonTextColor(QWidget *widget, QColor col) const
 }
 
 /* Compute the size of a text. */
-static inline QSize textSize(const QFont &font, const QString &text, bool realHeight)
+static inline QSize textSize(const QFont &font, const QString &text)
 {
   int tw, th;
   tw = th = 0;
@@ -1454,19 +1457,16 @@ static inline QSize textSize(const QFont &font, const QString &text, bool realHe
     /* deal with newlines */
     QStringList l = t.split('\n');
 
-    if (l.size() == 1 || realHeight)
-      th = QFontMetrics(font).height()*(l.size());
-    else
-    {
-      /* For some fonts, e.g. Noto Sans, QFontMetrics(font)::height() returns
-         a too big height for multiline texts but QFontMetrics::boundingRect()
-         returns the correct height with character M. I don't know how they
-         found the so-called "magic constant" 1.6 but it seems to be correct. */
-      th = QFontMetrics(font).boundingRect(QLatin1Char('M')).height()*1.6;
-      th *= l.size();
-    }
+    th = QFontMetrics(font).height()*(l.size());
+
     for (int i=0; i<l.size(); i++)
       tw = qMax(tw,QFontMetrics(font).width(l[i]));
+
+    if (l.size() > 1)
+    {
+      QRect br = QFontMetrics(font).boundingRect(QRect(0,0,tw,th), Qt::AlignCenter, text);
+      th = br.height();
+    }
   }
 
   return QSize(tw,th);
@@ -1608,10 +1608,14 @@ void Style::drawComboLineEdit(const QStyleOption *option,
   if (ispec.hasInterior || !hasHighContrastWithContainer(combo, lineedit->palette().color(QPalette::Text)))
     renderInterior(painter,option->rect,fspec,ispec,ispec.element+leStatus);
   else
-    painter->fillRect(interiorRect(option->rect,fspec), lineedit->palette().brush(leStatus.contains("-inactive")
-                                                                                    ? QPalette::Inactive
-                                                                                    : QPalette::Active,
-                                                                                  QPalette::Base));
+  {
+    QColor baseCol = lineedit->palette().color(leStatus.contains("-inactive")
+                                                 ? QPalette::Inactive
+                                                 : QPalette::Active,
+                                               QPalette::Base);
+    baseCol.setAlpha(255);
+    painter->fillRect(interiorRect(option->rect,fspec), baseCol);
+  }
   if (!(option->state & State_Enabled))
     painter->restore();
 }
@@ -1665,17 +1669,24 @@ void Style::drawPrimitive(PrimitiveElement element,
       }
 
       interior_spec ispec = getInteriorSpec("Dialog");
+      size_spec sspec = getSizeSpec("Dialog");
       if (widget && !ispec.element.isEmpty()
           && !widget->windowFlags().testFlag(Qt::FramelessWindowHint)) // not a panel)
       {
         if (QWidget *child = widget->childAt(0,0))
         {
           if (qobject_cast<QMenuBar*>(child) || qobject_cast<QToolBar*>(child))
+          {
             ispec = getInteriorSpec("Window");
+            sspec = getSizeSpec("Window");
+          }
         }
       }
       else
+      {
         ispec = getInteriorSpec("Window");
+        sspec = getSizeSpec("Window");
+      }
       frame_spec fspec;
       default_frame_spec(fspec);
 
@@ -1684,7 +1695,16 @@ void Style::drawPrimitive(PrimitiveElement element,
         suffix = "-normal-inactive";
       if (tspec_.no_window_pattern && (ispec.px > 0 || ispec.py > 0))
         ispec.px = -1; // no tiling pattern (without translucency)
-      renderInterior(painter,option->rect,fspec,ispec,ispec.element+suffix);
+      int dh = sspec.incrementH ? sspec.minH : qMax(sspec.minH - h, 0);
+      int dw = sspec.incrementW ? sspec.minW : qMax(sspec.minW - w, 0);
+      if (dh > 0 || dw > 0)
+      {
+        painter->save();
+        painter->setClipRegion(option->rect, Qt::IntersectClip);
+      }
+      renderInterior(painter,option->rect.adjusted(0,0,dw,dh),fspec,ispec,ispec.element+suffix);
+      if (dh > 0 || dw > 0)
+        painter->restore();
 
       break;
     }
@@ -1858,9 +1878,10 @@ void Style::drawPrimitive(PrimitiveElement element,
       QWidget *p = getParent(widget,1);
       bool autoraise(option->state & State_AutoRaise);
       bool fillWidgetInterior(false);
+      bool onToolBar(false);
       if (getStylableToolbarContainer(widget))
       {
-        autoraise = true; // we make all toolbuttons auto-raised inside toolbars
+        onToolBar = autoraise = true; // we make all toolbuttons auto-raised inside toolbars
         if (!getFrameSpec("ToolbarButton").element.isEmpty()
             || !getInteriorSpec("ToolbarButton").element.isEmpty())
         {
@@ -2108,9 +2129,9 @@ void Style::drawPrimitive(PrimitiveElement element,
 
         /*bool withArrow = hasArrow (tb, opt);
         bool isHorizontal = true;*/
-        if (tspec_.group_toolbar_buttons)
+        if (const QToolBar *toolBar = qobject_cast<const QToolBar*>(p))
         {
-          if (const QToolBar *toolBar = qobject_cast<const QToolBar*>(tb->parentWidget()))
+          if (tspec_.group_toolbar_buttons)
           {
             /*if (toolBar->orientation() == Qt::Vertical)
               isHorizontal = false;*/
@@ -2121,7 +2142,7 @@ void Style::drawPrimitive(PrimitiveElement element,
                 painter->restore();
               drawRaised = true;
               ispec.px = ispec.py = 0;
-              int kind = whichToolbarButton (tb, toolBar);
+              int kind = whichGroupedTBtn (tb, toolBar);
               if (kind != 2)
               {
                 fspec.isAttached = true;
@@ -2139,6 +2160,24 @@ void Style::drawPrimitive(PrimitiveElement element,
               painter->setTransform(m, true);
             }*/
           }
+        }
+        /* group libfm-qt's path buttons when they aren't on a toolbar */
+        else if (!onToolBar && tb->inherits("Fm::PathButton"))
+        {
+            //if (QWidget *ancestor = getParent(p,3))
+            //{
+              //if (ancestor->inherits("Fm::PathBar"))
+              //{
+                drawRaised = true;
+                ispec.px = ispec.py = 0;
+                int kind = whichGroupedTBtn(tb, p);
+                if (kind != 2)
+                {
+                  fspec.isAttached = true;
+                  fspec.HPos = kind;
+                }
+              //}
+            //}
         }
 
         // lack of space  (-> CE_ToolButtonLabel)
@@ -2288,7 +2327,7 @@ void Style::drawPrimitive(PrimitiveElement element,
                 renderInterior(painter,r,fspec,ispec,ispec.element+"-"+animationStartState,drawRaised);
             }
             painter->save();
-            painter->setOpacity((qreal)animationOpacity_/100);
+            painter->setOpacity(static_cast<qreal>(animationOpacity_)/100.0);
           }
           renderFrame(painter,r,fspec,fspec.element+"-"+status,0,0,0,0,0,drawRaised);
           if (!fillWidgetInterior)
@@ -2319,7 +2358,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           if (animationOpacity_ < 100)
           {
             painter->save();
-            painter->setOpacity(1.0 - (qreal)animationOpacity_/100);
+            painter->setOpacity(1.0 - static_cast<qreal>(animationOpacity_)/100.0);
             renderFrame(painter,r,fspec,fspec.element+"-"+animationStartState);
             if (!fillWidgetInterior)
               renderInterior(painter,r,fspec,ispec,ispec.element+"-"+animationStartState);
@@ -2493,7 +2532,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           if (animationOpacity_ < 100)
             renderElement(painter, ispec.element+animationStartState, option->rect);
           painter->save();
-          painter->setOpacity((qreal)animationOpacity_/100);
+          painter->setOpacity(static_cast<qreal>(animationOpacity_)/100.0);
         }
         renderElement(painter, prefix+ispec.element+suffix, option->rect);
         if (animate)
@@ -2626,7 +2665,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           if (animationOpacity_ < 100)
             renderElement(painter, ispec.element+animationStartState, option->rect);
           painter->save();
-          painter->setOpacity((qreal)animationOpacity_/100);
+          painter->setOpacity(static_cast<qreal>(animationOpacity_)/100.0);
         }
         renderElement(painter, prefix+ispec.element+suffix, option->rect);
         if (animate)
@@ -2828,28 +2867,29 @@ void Style::drawPrimitive(PrimitiveElement element,
           painter->restore();
 
           painter->save();
-          painter->setOpacity(1.0 - (qreal)tspec_.reduce_menu_opacity/100.0);
+          painter->setOpacity(1.0 - static_cast<qreal>(tspec_.reduce_menu_opacity)/100.0);
 
           painter->save();
           painter->setClipRegion(QRegion(r));
           renderFrame(painter,option->rect,fspec,fspec.element+"-shadow");
           painter->restore();
 
-          renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal");
+          if (!renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal"))
+            painter->fillRect(interiorRect(option->rect,fspec), QApplication::palette().color(QPalette::Window));
           painter->restore();
         }
         else
         {
           renderFrame(painter,option->rect,fspec,fspec.element+"-shadow");
-          renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal");
+          if (!renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal"))
+            painter->fillRect(interiorRect(option->rect,fspec), QApplication::palette().color(QPalette::Window));
         }
       }
       else
       {
-        if (!widget) // QML
+        if (!widget || !renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal")) // QML
           painter->fillRect(option->rect, QApplication::palette().color(QPalette::Window));
         renderFrame(painter,option->rect,fspec,fspec.element+"-normal");
-        renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal");
       }
 
       break;
@@ -2897,6 +2937,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           || widget->inherits("QWellArray") // color dialog's color rects
           || widget->inherits("QComboBoxPrivateContainer")) // frame for combo popups
       {
+        bool pcmanfmInactiveView(false);
         if (widget)
         {
           if (isDolphin_)
@@ -2917,8 +2958,21 @@ void Style::drawPrimitive(PrimitiveElement element,
           {
             if (QWidget *pw = widget->parentWidget())
             {
-              if ((hspec_.transparent_pcmanfm_view && pw->inherits("Fm::FolderView"))
-                  || (hspec_.transparent_pcmanfm_sidepane && pw->inherits("Fm::SidePane")))
+              if (hspec_.transparent_pcmanfm_view && pw->inherits("Fm::FolderView"))
+              {
+                /* fill in an inactive view frame of a split view with the base color */
+                if (pw->palette().color(QPalette::Active, QPalette::Base) != getFromRGBA(cspec_.baseColor))
+                {
+                   pcmanfmInactiveView = true;
+                   painter->fillRect(interiorRect(option->rect,getFrameSpec("GenericFrame")),
+                                     QApplication::palette().color(isWidgetInactive(widget)
+                                                                     ? QPalette::Inactive
+                                                                     : QPalette::Active,
+                                                                   QPalette::Base));
+                }
+                else break;
+              }
+              else if (hspec_.transparent_pcmanfm_sidepane && pw->inherits("Fm::SidePane"))
               {
                 break;
               }
@@ -2951,28 +3005,29 @@ void Style::drawPrimitive(PrimitiveElement element,
               painter->restore();
 
               painter->save();
-              painter->setOpacity(1.0 - (qreal)tspec_.reduce_menu_opacity/100.0);
+              painter->setOpacity(1.0 - static_cast<qreal>(tspec_.reduce_menu_opacity)/100.0);
 
               painter->save();
               painter->setClipRegion(QRegion(r));
               renderFrame(painter,option->rect,fspec,fspec.element+"-shadow");
               painter->restore();
 
-              renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal");
+              if (!renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal"))
+                painter->fillRect(interiorRect(option->rect,fspec), QApplication::palette().color(QPalette::Window));
               painter->restore();
             }
             else
             {
               renderFrame(painter,option->rect,fspec,fspec.element+"-shadow");
-              renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal");
+              if (!renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal"))
+                painter->fillRect(interiorRect(option->rect,fspec), QApplication::palette().color(QPalette::Window));
             }
           }
           else
           {
-            if (!widget) // QML
+            if (!widget  || !renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal")) // QML
               painter->fillRect(option->rect, QApplication::palette().color(QPalette::Window));
             renderFrame(painter,option->rect,fspec,fspec.element+"-normal");
-            renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-normal");
           }
           break;
         }
@@ -3001,8 +3056,13 @@ void Style::drawPrimitive(PrimitiveElement element,
         if (isWidgetInactive(widget))
           fStatus = "normal-inactive"; // the focus state is meaningless here
         if (!widget) // QML again!
-          painter->fillRect(option->rect, QApplication::palette().color(QPalette::Base));
-        bool animate(widget && widget->isEnabled()
+        {
+          QColor baseCol = QApplication::palette().color(QPalette::Base);
+          baseCol.setAlpha(255);
+          painter->fillRect(option->rect, baseCol);
+        }
+        bool animate(!pcmanfmInactiveView
+                     && widget && widget->isEnabled()
                      && ((animatedWidget_ == widget && !fStatus.startsWith("normal"))
                          || (animatedWidgetOut_ == widget && fStatus.startsWith("normal"))));
         QString animationStartState(animationStartState_);
@@ -3025,7 +3085,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           else if (animationOpacity < 100)
             renderFrame(painter,option->rect,fspec,fspec.element+"-"+animationStartState);
           painter->save();
-          painter->setOpacity((qreal)animationOpacity/100);
+          painter->setOpacity(static_cast<qreal>(animationOpacity)/100.0);
         }
         renderFrame(painter,option->rect,fspec,fspec.element+"-"+fStatus);
         if (animate)
@@ -3265,7 +3325,11 @@ void Style::drawPrimitive(PrimitiveElement element,
         if (ispec.hasInterior)
           renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-focused");
         else
-          painter->fillRect(interiorRect(option->rect,fspec), widget->palette().brush(QPalette::Base));
+        {
+          QColor baseCol = widget->palette().color(QPalette::Base);
+          baseCol.setAlpha(255);
+          painter->fillRect(interiorRect(option->rect,fspec), baseCol);
+        }
         return;
       }
 
@@ -3332,7 +3396,7 @@ void Style::drawPrimitive(PrimitiveElement element,
         {
           QString maxTxt = spinMaxText(sb);
           if (maxTxt.isEmpty()
-              || option->rect.width() < textSize(sb->font(),maxTxt,false).width() + fspec.left
+              || option->rect.width() < textSize(sb->font(),maxTxt).width() + fspec.left
                                         + (sspec.incrementW ? sspec.minW : 0)
                                         + (sb->buttonSymbols() == QAbstractSpinBox::NoButtons ? fspec.right : 0)
               || (sb->buttonSymbols() != QAbstractSpinBox::NoButtons
@@ -3427,7 +3491,7 @@ void Style::drawPrimitive(PrimitiveElement element,
             renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-"+animationStartState);
         }
         painter->save();
-        painter->setOpacity((qreal)animationOpacity/100);
+        painter->setOpacity(static_cast<qreal>(animationOpacity)/100.0);
       }
       /* force frame */
       renderFrame(painter,
@@ -3450,10 +3514,14 @@ void Style::drawPrimitive(PrimitiveElement element,
         }
       }
       if (fillWidgetInterior) // widget isn't null
-        painter->fillRect(interiorRect(option->rect,fspec), widget->palette().brush(leStatus.contains("-inactive")
-                                                                                      ? QPalette::Inactive
-                                                                                      : QPalette::Active,
-                                                                                     QPalette::Base));
+      {
+        QColor baseCol = widget->palette().color(leStatus.contains("-inactive")
+                                                   ? QPalette::Inactive
+                                                   : QPalette::Active,
+                                                 QPalette::Base);
+        baseCol.setAlpha(255);
+        painter->fillRect(interiorRect(option->rect,fspec), baseCol);
+      }
       if (!(option->state & State_Enabled))
         painter->restore();
 
@@ -3932,7 +4000,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           const label_spec lspec1 = getLabelSpec("ComboBox");
           QFont F(painter->font());
           if (lspec1.boldFont) F.setWeight(lspec1.boldness);
-          QSize txtSize = textSize(F,combo->currentText,false);
+          QSize txtSize = textSize(F,combo->currentText);
           if (/*cb->width() < fspec.left+lspec1.left+txtSize.width()+lspec1.right+COMBO_ARROW_LENGTH+fspec.right
               ||*/ cb->height() < fspec.top+lspec1.top+txtSize.height()+fspec.bottom+lspec1.bottom)
           {
@@ -3981,7 +4049,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           drawRaised = true;
 
           //const QStyleOptionToolButton *opt = qstyleoption_cast<const QStyleOptionToolButton*>(option);
-          int kind = whichToolbarButton (tb, toolBar);
+          int kind = whichGroupedTBtn (tb, toolBar);
           if (kind != 2)
           {
             fspec.isAttached = true;
@@ -4053,7 +4121,7 @@ void Style::drawPrimitive(PrimitiveElement element,
                   renderInterior(painter,r,fspec,ispec,ispec.element+"-"+animationStartState);
               }
               painter->save();
-              painter->setOpacity((qreal)animationOpacity_/100);
+              painter->setOpacity(static_cast<qreal>(animationOpacity_)/100.0);
             }
             if (!fillWidgetInterior)
               renderInterior(painter,r,fspec,ispec,ispec.element+"-"+status);
@@ -4070,7 +4138,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           else if (animate && animationOpacity_ < 100  && !animationStartState.startsWith("normal"))
           {
             painter->save();
-            painter->setOpacity(1.0 - (qreal)animationOpacity_/100);
+            painter->setOpacity(1.0 - static_cast<qreal>(animationOpacity_)/100.0);
             renderFrame(painter,r,fspec,fspec.element+"-"+animationStartState);
             renderInterior(painter,r,fspec,ispec,ispec.element+"-"+animationStartState);
             painter->restore();
@@ -4199,7 +4267,7 @@ void Style::drawPrimitive(PrimitiveElement element,
           if (animatePanel)
           {
             painter->save();
-            painter->setOpacity((qreal)animationOpacity/100);
+            painter->setOpacity(static_cast<qreal>(animationOpacity)/100.0);
           }
         }
         _status = status;
@@ -4250,12 +4318,16 @@ void Style::drawPrimitive(PrimitiveElement element,
           }
         }
         if (fillWidgetInterior) // widget isn't null
-          painter->fillRect(interiorRect(r,fspec), widget->palette().brush(status.contains("-inactive")
-                                                                             ? QPalette::Inactive
-                                                                             : QPalette::Active,
-                                                                           tspec_.combo_as_lineedit
-                                                                             ? QPalette::Base
-                                                                             : QPalette::Button));
+        {
+          QColor comboCol = widget->palette().color(status.contains("-inactive")
+                                                      ? QPalette::Inactive
+                                                      : QPalette::Active,
+                                                    tspec_.combo_as_lineedit
+                                                      ? QPalette::Base
+                                                      : QPalette::Button);
+          comboCol.setAlpha(255);
+          painter->fillRect(interiorRect(r,fspec), comboCol);
+        }
         if (!(option->state & State_Enabled))
         {
           painter->restore();
@@ -4456,7 +4528,23 @@ void Style::drawPrimitive(PrimitiveElement element,
       break;
     }
 
-    //case PE_PanelItemViewRow :
+    case PE_PanelItemViewRow : {
+      if (const QStyleOptionViewItem *opt = qstyleoption_cast<const QStyleOptionViewItem*>(option))
+      {
+        QPalette::ColorGroup cg = (widget ? widget->isEnabled() : (opt->state & QStyle::State_Enabled))
+                                    ? QPalette::Normal
+                                    : QPalette::Disabled;
+        if (cg == QPalette::Normal && isWidgetInactive(widget))
+          cg = QPalette::Inactive; // Qt checks QStyle::State_Active, which isn't consistent with inactive base color
+
+        if ((opt->state & QStyle::State_Selected) && styleHint(QStyle::SH_ItemView_ShowDecorationSelected, opt, widget))
+          painter->fillRect(opt->rect, opt->palette.brush(cg, QPalette::Highlight));
+        else if (opt->features & QStyleOptionViewItem::Alternate)
+          painter->fillRect(opt->rect, opt->palette.brush(cg, QPalette::AlternateBase));
+      }
+      break;
+    }
+
     case PE_PanelItemViewItem : {
       // this may be better for QML but I don't like it
       /*if (!widget)
@@ -4762,7 +4850,7 @@ void Style::drawControl(ControlElement element,
   const QIcon::State iconstate =
       (option->state & State_On) ? QIcon::On : QIcon::Off;
 
-  switch ((unsigned)element) { // unsigned because of CE_Kv_KCapacityBar
+  switch (static_cast<unsigned>(element)) { // unsigned because of CE_Kv_KCapacityBar
     case CE_MenuTearoff : {
       QString status = (option->state & State_Selected) ? "focused" : "normal";
       // see PM_MenuTearoffHeight and also PE_PanelMenu
@@ -5186,7 +5274,7 @@ void Style::drawControl(ControlElement element,
                 o.palette = palette;
                 if (hasIcon)
                 {
-                  qreal tintPercentage = hspec_.tint_on_mouseover;
+                  qreal tintPercentage = static_cast<qreal>(hspec_.tint_on_mouseover);
                   if (tintPercentage > 0)
                   {
                     QPixmap px = tintedPixmap(option,
@@ -5255,8 +5343,8 @@ void Style::drawControl(ControlElement element,
           }
           else if (hasIcon) // disabled
           {
-            qreal opacityPercentage = hspec_.disabled_icon_opacity;
-            if (opacityPercentage < 100)
+            qreal opacityPercentage = static_cast<qreal>(hspec_.disabled_icon_opacity);
+            if (opacityPercentage < 100.0)
             {
               QStyleOptionViewItem o(*opt);
               const label_spec lspec = getLabelSpec("ItemView");
@@ -5691,7 +5779,7 @@ void Style::drawControl(ControlElement element,
         }
         QFont F(painter->font());
         if (lspec.boldFont) F.setWeight(lspec.boldness);
-        QSize txtSize = textSize(F,opt->currentText,false);
+        QSize txtSize = textSize(F,opt->currentText);
         if (/*r.width() < fspec.left+lspec.left+txtSize.width()+lspec.right+COMBO_ARROW_LENGTH+fspec.right
                         + (sspec.incrementW ? sspec.minW : 0)
             ||*/ cbH < fspec.top+lspec.top+txtSize.height()+fspec.bottom+lspec.bottom)
@@ -6331,7 +6419,7 @@ void Style::drawControl(ControlElement element,
             else
               F.setWeight(lspec.boldness);
           }
-          QSize txtSize = textSize(F,txt,false);
+          QSize txtSize = textSize(F,txt);
           if (txtSize.width() > txtWidth)
           {
             /* Even if the text is elided because of the size hint,
@@ -6475,7 +6563,7 @@ void Style::drawControl(ControlElement element,
               col = getFromRGBA(lspec.focusColor);
             if (col.isValid())
               tBoxPalette.setColor(QPalette::ButtonText, col);
-            qreal tintPercentage = hspec_.tint_on_mouseover;
+            qreal tintPercentage = static_cast<qreal>(hspec_.tint_on_mouseover);
             if (tintPercentage > 0 && !opt->icon.isNull())
               px = tintedPixmap(option, px,tintPercentage);
           }
@@ -6491,7 +6579,7 @@ void Style::drawControl(ControlElement element,
               col = getFromRGBA(lspec.pressColor);
             if (col.isValid())
               tBoxPalette.setColor(QPalette::ButtonText, col);
-            qreal tintPercentage = hspec_.tint_on_mouseover;
+            qreal tintPercentage = static_cast<qreal>(hspec_.tint_on_mouseover);
             if (tintPercentage > 0 && (option->state & State_MouseOver) && !opt->icon.isNull())
               px = tintedPixmap(option, px,tintPercentage);
             if (styleHint(QStyle::SH_ToolBox_SelectedPageTitleBold, opt, widget))
@@ -6505,16 +6593,16 @@ void Style::drawControl(ControlElement element,
         }
         else if (!opt->icon.isNull()) // disabled
         {
-          qreal opacityPercentage = hspec_.disabled_icon_opacity;
-          if (opacityPercentage < 100)
+          qreal opacityPercentage = static_cast<qreal>(hspec_.disabled_icon_opacity);
+          if (opacityPercentage < 100.0)
             px = translucentPixmap(px, opacityPercentage);
         }
 
-        /* then, draw the text and icon as in QCommonStyle::drawControl() */
+        /* then, draw the text and icon as in QCommonStyle::drawControl()
+           but with corrections, especially for RTL */
 
         QRect cr = subElementRect(QStyle::SE_ToolBoxTabContents, opt, widget);
         QRect tr, ir;
-        int ih = 0;
         if (px.isNull())
         {
           tr = cr;
@@ -6522,23 +6610,36 @@ void Style::drawControl(ControlElement element,
         }
         else
         {
-          int iw = px.width() + 4;
-          ih = px.height();
-          ir = QRect(cr.left()+4, cr.top(), iw+2, ih);
-          tr = QRect(ir.right(), cr.top(), cr.width()-ir.right()-4, cr.height());
+          bool rtl(option->direction == Qt::RightToLeft);
+          ir = alignedRect(option->direction,
+                           Qt::AlignLeft | Qt::AlignVCenter,
+                           QSize(smallIconSize,smallIconSize), cr);
+          if (rtl)
+          {
+            ir.adjust(-4, 0, -4, 0);
+            tr = QRect(cr.left()+3, cr.top(), cr.width()-smallIconSize-14, cr.height()); //  14 = 7 + 4 + 3 (spacing is 7)
+          }
+          else
+          {
+            ir.adjust(4 , 0, 4, 0);
+            tr = QRect(ir.right()+8, cr.top(), cr.width()-ir.right()-11, cr.height()); // 11 = 8 + 3
+          }
         }
 
         QString txt = QFontMetrics(painter->font()).elidedText(opt->text,Qt::ElideRight,tr.width());
 
-        if (ih)
-          painter->drawPixmap(ir.left(), (opt->rect.height() - ih) / 2, px);
+        if (!px.isNull())
+          painter->drawPixmap(ir, px);
 
         int talign = Qt::AlignLeft | Qt::AlignVCenter;
         if (!styleHint(SH_UnderlineShortcut, opt, widget))
           talign |= Qt::TextHideMnemonic;
         else
           talign |= Qt::TextShowMnemonic;
+        painter->save();
+        painter->setLayoutDirection(option->direction); // because of a bug in QToolBox?
         drawItemText(painter, tr, talign, tBoxPalette, state != 0, txt, QPalette::ButtonText);
+        painter->restore();
 
         if (state == 3 && styleHint(QStyle::SH_ToolBox_SelectedPageTitleBold, opt, widget))
           painter->restore();
@@ -6939,7 +7040,7 @@ void Style::drawControl(ControlElement element,
         }
         else if (widget)
         { // busy progressbar
-          QWidget *wi = (QWidget *)widget;
+          QWidget *wi = const_cast<QWidget*>(widget);
           int animcount = progressbars_[wi];
           int pm = qMin(qMax(pixelMetric(PM_ProgressBarChunkWidth),fspec.left+fspec.right),r.width()/2-2);
           QRect R = r.adjusted(animcount,0,0,0);
@@ -7504,7 +7605,7 @@ void Style::drawControl(ControlElement element,
           renderInterior(painter,r,fspec,ispec,ispec.element+"-"+animationStartState_);
         }
         painter->save();
-        painter->setOpacity(qMin((qreal)animationOpacity_/100, opacity));
+        painter->setOpacity(qMin(static_cast<qreal>(animationOpacity_)/100.0, opacity));
       }
       renderFrame(painter,r,fspec,fspec.element+"-"+sStatus);
       renderInterior(painter,r,fspec,ispec,ispec.element+"-"+sStatus);
@@ -7527,6 +7628,18 @@ void Style::drawControl(ControlElement element,
       break;
     }
 
+    case CE_HeaderEmptyArea:
+      if (QAbstractItemView *iv = qobject_cast<QAbstractItemView*>(getParent(widget,1)))
+      {
+        if (iv->viewport() && iv->viewport()->autoFillBackground())
+        {
+          painter->fillRect(option->rect, option->palette.brush(iv->viewport()->backgroundRole()));
+          break;
+        }
+      }
+      painter->fillRect(option->rect, option->palette.background());
+      break;
+
     case CE_HeaderSection : {
       /* WARNING: There is an issue in Qt5, which didn't exist in Qt4: The horizontal
                   position is always from left to right, so that, for example,
@@ -7535,6 +7648,10 @@ void Style::drawControl(ControlElement element,
       const QString group = "HeaderSection";
       frame_spec fspec = getFrameSpec(group);
       const interior_spec ispec = getInteriorSpec(group);
+      bool rtl(option->direction == Qt::RightToLeft);
+      bool stretched(false);
+      if (const QHeaderView *hv = qobject_cast<const QHeaderView*>(widget))
+        stretched = hv-> stretchLastSection();
 
       bool horiz = true;
       QRect sep;
@@ -7544,11 +7661,11 @@ void Style::drawControl(ControlElement element,
         switch (opt->position) {
           case QStyleOptionHeader::End:
             fspec.isAttached = true;
-            fspec.HPos = 1;
+            fspec.HPos = tspec_.spread_header && (stretched || (rtl && horiz)) ? 0 : 1;
             break;
           case QStyleOptionHeader::Beginning:
             fspec.isAttached = true;
-            fspec.HPos = -1;
+            fspec.HPos = tspec_.spread_header && (!(rtl && horiz)|| stretched) ? 0 : -1;
             if (horiz)
             {
               sep.setRect(x+w-fspec.right,
@@ -7582,8 +7699,24 @@ void Style::drawControl(ControlElement element,
                           fspec.right);
             }
             break;
+         case QStyleOptionHeader::OnlyOneSection:
+            if (tspec_.spread_header)
+            {
+              fspec.isAttached = true;
+              fspec.HPos = stretched ? 0 : rtl ? -1 : 1;
+            }
+           break;
          default: break;
         }
+      }
+
+      if (tspec_.spread_header)
+      {
+        fspec.isAttached = true;
+        if (horiz || !rtl)
+          fspec.VPos = 1;
+        else
+          fspec.VPos = -1;
       }
 
       QRect r = option->rect;
@@ -7611,6 +7744,14 @@ void Style::drawControl(ControlElement element,
       else
         fspec.expansion = qMin(fspec.expansion,r.height()/2);*/
       fspec.expansion = 0; // vertical headers have variable heights
+
+      /* merge the background of the header with that of its parent view, if any */
+      if (QAbstractItemView *iv = qobject_cast<QAbstractItemView*>(getParent(widget,1)))
+      {
+        if (iv->viewport() && iv->viewport()->autoFillBackground())
+          painter->fillRect(r, option->palette.brush(iv->viewport()->backgroundRole()));
+      }
+
       renderFrame(painter,r,fspec,fspec.element+"-"+status,0,0,0,0,0,true);
       renderInterior(painter,r,fspec,ispec,ispec.element+"-"+status,true);
       /* if there's no header separator, use the right frame */
@@ -7640,20 +7781,19 @@ void Style::drawControl(ControlElement element,
 
         if (opt->orientation != Qt::Horizontal)
         { // -> CT_HeaderSection
-          int t = fspec.left;
+          //int t = fspec.left;
           fspec.left = fspec.top;
-          fspec.top = t;
-          t = fspec.right;
+          /*fspec.top = t;
+          t = fspec.right;*/
           fspec.right = fspec.bottom;
-          fspec.bottom = t;
+          //fspec.bottom = t;
+          /* unfortunately, vertical headers don't obey CT_HeaderSection vertically */
+          fspec.top = fspec.bottom = lspec.top = lspec.bottom = 0;
         }
         if (opt->position == QStyleOptionHeader::End || opt->position == QStyleOptionHeader::Middle)
         {
           if (opt->orientation == Qt::Horizontal)
-          {
-            if (rtl) fspec.right = 0;
-            else fspec.left = 0;
-          }
+            fspec.left = 0;
           else
             fspec.top = 0;
         }
@@ -7669,7 +7809,17 @@ void Style::drawControl(ControlElement element,
         }
         else if (opt->textAlignment & Qt::AlignHCenter)
         {
-          lspec.right = lspec.left = 0;
+          if (opt->icon.isNull())
+          {
+            lspec.right = lspec.left = 0;
+          }
+          else
+          {
+            if (rtl)
+              fspec.left = 0;
+            else
+              lspec.right = 0;
+          }
         }
         if (opt->sortIndicator != QStyleOptionHeader::None)
         { // the frame is taken care of at SE_HeaderArrow
@@ -7679,10 +7829,22 @@ void Style::drawControl(ControlElement element,
             fspec.right = 0;
         }
 
-        /* for thin headers, like in Dolphin's details view */
-        if (opt->icon.isNull())
+        int smallIconSize = pixelMetric(PM_SmallIconSize);
+
+        /* for thin horizontal headers, like in Dolphin's details view */
+        if (opt->orientation == Qt::Horizontal)
         {
-          fspec.top = fspec.bottom = lspec.top = lspec.bottom = 0;
+          QFont f;
+          if (widget) f = widget->font();
+          else f = QApplication::font();
+          if (lspec.boldFont) f.setWeight(lspec.boldness);
+          int contentsH = QFontMetrics(f).height();
+          if (!opt->icon.isNull())
+            contentsH = qMax(contentsH, smallIconSize);
+          if (h < contentsH + fspec.top + fspec.bottom + lspec.top + lspec.bottom)
+          {
+            fspec.top = fspec.bottom = lspec.top = lspec.bottom = 0;
+          }
         }
 
         QString status = getState(option,widget);
@@ -7696,7 +7858,6 @@ void Style::drawControl(ControlElement element,
         else if (status.startsWith("focused"))
           state = 2;
 
-        int smallIconSize = pixelMetric(PM_SmallIconSize);
         QSize iconSize = QSize(smallIconSize,smallIconSize);
         bool isInactive(status.contains("-inactive"));
         renderLabel(option,painter,
@@ -8038,7 +8199,7 @@ void Style::drawControl(ControlElement element,
           QFont fnt(painter->font());
           if ((opt->features & QStyleOptionButton::AutoDefaultButton) || lspec.boldFont)
             fnt.setWeight(lspec.boldness);
-          txtSize = textSize(fnt,opt->text,false);
+          txtSize = textSize(fnt,opt->text);
           /* in case there isn't enough space */
           if (pb)
           { // not needed; just for "nostalgic" reasons
@@ -8271,7 +8432,7 @@ void Style::drawControl(ControlElement element,
           QFont fnt(painter->font());
           if ((opt->features & QStyleOptionButton::AutoDefaultButton) || lspec.boldFont)
             fnt.setWeight(lspec.boldness);
-          QSize txtSize = textSize(fnt,opt->text,false);
+          QSize txtSize = textSize(fnt,opt->text);
           bool enoughSpace(true);
           if (w < txtSize.width()
                   +(opt->icon.isNull() ? 0 : opt->iconSize.width()+lspec.tispace)
@@ -8380,7 +8541,7 @@ void Style::drawControl(ControlElement element,
                   renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-"+animationStartState);
               }
               painter->save();
-              painter->setOpacity((qreal)animationOpacity_/100);
+              painter->setOpacity(static_cast<qreal>(animationOpacity_)/100.0);
             }
             renderFrame(painter,option->rect,fspec,fspec.element+"-"+status);
             if (!fillWidgetInterior)
@@ -8410,7 +8571,7 @@ void Style::drawControl(ControlElement element,
             if (animationOpacity_ < 100)
             {
               painter->save();
-              painter->setOpacity(1.0 - (qreal)animationOpacity_/100);
+              painter->setOpacity(1.0 - static_cast<qreal>(animationOpacity_)/100.0);
               renderFrame(painter,option->rect,fspec,fspec.element+"-"+animationStartState);
               if (!fillWidgetInterior)
                 renderInterior(painter,option->rect,fspec,ispec,ispec.element+"-"+animationStartState);
@@ -8743,7 +8904,7 @@ void Style::drawControl(ControlElement element,
             {
               QFont F(painter->font());
               if (lspec.boldFont) F.setWeight(lspec.boldness);
-              QSize txtSize = textSize(F, txt, false);
+              QSize txtSize = textSize(F, txt);
               if (tialign == Qt::ToolButtonTextBesideIcon || tialign == Qt::ToolButtonTextUnderIcon)
               {
                 QSize availableSize = opt->rect.size()
@@ -8902,8 +9063,8 @@ void Style::drawControl(ControlElement element,
             qreal rDiff = 0;
             if (lspec.top+fspec.top + lspec.bottom+fspec.bottom > 0)
             {
-              rDiff = (qreal)(lspec.top+fspec.top - lspec.bottom-fspec.bottom)
-                      / (qreal)(lspec.top+fspec.top + lspec.bottom+fspec.bottom);
+              rDiff = static_cast<qreal>(lspec.top+fspec.top - lspec.bottom-fspec.bottom)
+                      / static_cast<qreal>(lspec.top+fspec.top + lspec.bottom+fspec.bottom);
             }
             if (opt->arrowType == Qt::LeftArrow)
             {
@@ -8914,7 +9075,7 @@ void Style::drawControl(ControlElement element,
               fspec.bottom = qMin(fspec.bottom, fspec1.bottom);
               int vOffset = 0;
               if (lspec.top+lspec.bottom > 0 && h > fspec.top+fspec.bottom+dspec.size)
-                vOffset = qRound((qreal)(h-fspec.top-fspec.bottom-dspec.size) * rDiff / 2.0);
+                vOffset = qRound(static_cast<qreal>(h-fspec.top-fspec.bottom-dspec.size) * rDiff / 2.0);
               fspec.top += vOffset;
               fspec.bottom -= vOffset;
             }
@@ -8927,7 +9088,7 @@ void Style::drawControl(ControlElement element,
               fspec.bottom = qMin(fspec.bottom, fspec1.bottom);
               int vOffset = 0;
               if (lspec.top+lspec.bottom > 0 && h > fspec.top+fspec.bottom+dspec.size)
-                vOffset = qRound((qreal)(h-fspec.top-fspec.bottom-dspec.size) * rDiff / 2.0);
+                vOffset = qRound(static_cast<qreal>(h-fspec.top-fspec.bottom-dspec.size) * rDiff / 2.0);
               fspec.top += vOffset;
               fspec.bottom -= vOffset;
             }
@@ -8940,7 +9101,7 @@ void Style::drawControl(ControlElement element,
               fspec.top = 1;
               int hOffset = 0;
               if (lspec.top+lspec.bottom > 0 && w > fspec.left+fspec.right+dspec.size)
-                hOffset = qRound((qreal)(w-fspec.left-fspec.right-dspec.size) * rDiff / 2.0);
+                hOffset = qRound(static_cast<qreal>(w-fspec.left-fspec.right-dspec.size) * rDiff / 2.0);
               fspec.left += hOffset;
               fspec.right -= hOffset;
             }
@@ -8953,7 +9114,7 @@ void Style::drawControl(ControlElement element,
               fspec.bottom = 1;
               int hOffset = 0;
               if (lspec.top+lspec.bottom > 0 && w > fspec.left+fspec.right+dspec.size)
-                hOffset = qRound((qreal)(w-fspec.left-fspec.right-dspec.size) * rDiff / 2.0);
+                hOffset = qRound(static_cast<qreal>(w-fspec.left-fspec.right-dspec.size) * rDiff / 2.0);
               fspec.left += hOffset;
               fspec.right -= hOffset;
             }
@@ -9531,7 +9692,7 @@ void Style::drawComplexControl(ComplexControl control,
               const size_spec sspec = getSizeSpec(leGroup);
               QString maxTxt = spinMaxText(sb);
               if (maxTxt.isEmpty()
-                  || editRect.width() < textSize(sb->font(),maxTxt,false).width() + fspec.left
+                  || editRect.width() < textSize(sb->font(),maxTxt).width() + fspec.left
                                         + (sspec.incrementW ? sspec.minW : 0)
                                         + (sb->buttonSymbols() == QAbstractSpinBox::NoButtons
                                              ? fspec.right : 0)
@@ -9601,7 +9762,7 @@ void Style::drawComplexControl(ComplexControl control,
                 renderInterior(painter,r,fspec,ispec,ispec.element+"-"+animationStartState);
             }
             painter->save();
-            painter->setOpacity((qreal)animationOpacity/100);
+            painter->setOpacity(static_cast<qreal>(animationOpacity)/100.0);
           }
           renderFrame(painter,r,fspec,fspec.element+"-"+leStatus);
           if (!fillWidgetInterior)
@@ -9618,10 +9779,14 @@ void Style::drawComplexControl(ComplexControl control,
             }
           }
           if (fillWidgetInterior) // widget isn't null
-            painter->fillRect(interiorRect(r,fspec), widget->palette().brush(leStatus.contains("-inctive")
-                                                                               ? QPalette::Inactive
-                                                                               : QPalette::Active,
-                                                                             QPalette::Base));
+          {
+            QColor baseCol = widget->palette().color(leStatus.contains("-inctive")
+                                                       ? QPalette::Inactive
+                                                       : QPalette::Active,
+                                                     QPalette::Base);
+            baseCol.setAlpha(255);
+            painter->fillRect(interiorRect(r,fspec), baseCol);
+          }
           if (!(option->state & State_Enabled))
             painter->restore();
         }
@@ -9807,7 +9972,7 @@ void Style::drawComplexControl(ComplexControl control,
                 cbH = qMin(cb->height(), cbH);
               QFont F(painter->font());
               if (lspec.boldFont) F.setWeight(lspec.boldness);
-              QSize txtSize = textSize(F,opt->currentText,false);
+              QSize txtSize = textSize(F,opt->currentText);
               if (/*cb->width() < fspec.left+lspec.left+txtSize.width()+lspec.right+COMBO_ARROW_LENGTH+fspec.right
                   ||*/ cbH < fspec.top+lspec.top+txtSize.height()+fspec.bottom+lspec.bottom)
               {
@@ -9920,7 +10085,7 @@ void Style::drawComplexControl(ComplexControl control,
                 if (animatePanel)
                 {
                   painter->save();
-                  painter->setOpacity((qreal)animationOpacity/100);
+                  painter->setOpacity(static_cast<qreal>(animationOpacity)/100.0);
                 }
               }
               _status = status;
@@ -9959,7 +10124,7 @@ void Style::drawComplexControl(ComplexControl control,
                 if (animate && !animatePanel)
                 {
                   painter->save();
-                  painter->setOpacity((qreal)animationOpacity/100);
+                  painter->setOpacity(static_cast<qreal>(animationOpacity)/100.0);
                 }
                 drawComboLineEdit(&leOpt, painter, cb->lineEdit(), widget);
                 if (animate && !animatePanel)
@@ -9985,12 +10150,16 @@ void Style::drawComplexControl(ComplexControl control,
                 }
               }
               if (fillWidgetInterior) // widget isn't null
-                painter->fillRect(interiorRect(r,fspec), widget->palette().brush(status.contains("-inactive")
-                                                                                   ? QPalette::Inactive
-                                                                                   : QPalette::Active,
-                                                                                 drwaAsLineEdit
-                                                                                   ? QPalette::Base
-                                                                                   : QPalette::Button));
+              {
+                QColor comboCol = widget->palette().color(status.contains("-inactive")
+                                                            ? QPalette::Inactive
+                                                            : QPalette::Active,
+                                                          drwaAsLineEdit
+                                                            ? QPalette::Base
+                                                            : QPalette::Button);
+                comboCol.setAlpha(255);
+                painter->fillRect(interiorRect(r,fspec), comboCol);
+              }
             }
             if (libreoffice) painter->restore();
             /* draw focus rect */
@@ -10095,13 +10264,13 @@ void Style::drawComplexControl(ComplexControl control,
                                          QSize(icn.width(),icn.height())/pixelRatio_, ricn);
             if (!(option->state & State_Enabled))
             {
-              qreal opacityPercentage = hspec_.disabled_icon_opacity;
-              if (opacityPercentage < 100)
+              qreal opacityPercentage = static_cast<qreal>(hspec_.disabled_icon_opacity);
+              if (opacityPercentage < 100.0)
                 icn = translucentPixmap(icn, opacityPercentage);
             }
             else if (option->state & State_MouseOver)
             {
-              qreal tintPercentage = hspec_.tint_on_mouseover;
+              qreal tintPercentage = static_cast<qreal>(hspec_.tint_on_mouseover);
               if (tintPercentage > 0)
                 icn = tintedPixmap(option, icn, tintPercentage);
             }
@@ -10703,7 +10872,7 @@ void Style::drawComplexControl(ComplexControl control,
               renderInterior(painter,r,fspec,ispec,ispec.element+"-"+animationStartState_);
             }
             painter->save();
-            painter->setOpacity((qreal)animationOpacity_/100);
+            painter->setOpacity(static_cast<qreal>(animationOpacity_)/100.0);
           }
           renderFrame(painter,r,fspec,fspec.element+"-"+status);
           renderInterior(painter,r,fspec,ispec,ispec.element+"-"+status);
@@ -11588,9 +11757,9 @@ int Style::pixelMetric(PixelMetric metric, const QStyleOption *option, const QWi
       if (widget && lspec.boldFont)
       {
         QFont f = widget->font();
-        QSize s = textSize(f, "W", false);
+        QSize s = textSize(f, "W");
         f.setWeight(lspec.boldness);
-        b = (textSize(f, "W", false) - s).height();
+        b = (textSize(f, "W") - s).height();
       }
       return qMax(widget ? widget->fontMetrics().lineSpacing()+v+b
                            : option ? option->fontMetrics.lineSpacing()+v : 0,
@@ -11699,7 +11868,7 @@ void Style::setSurfaceFormat(QWidget *widget) const
                 Instead, the native handle should be created, the alpha
                 channel should be added to it, and the widget background
                 color should be made transparent (at polish()). */
-    if (!tspec_.isX11)
+    if (!tspec_.isX11 && !widget->inherits("QTipLabel"))
     {
       QWindow *window = widget->windowHandle();
       if (!window)
@@ -12069,7 +12238,7 @@ QSize Style::sizeFromContents(ContentsType type,
         if (!maxTxt.isEmpty())
         {
           maxTxt += QLatin1Char(' '); // QAbstractSpinBox::sizeHint() adds a space
-          QSize txtSize = textSize(sb->font(),maxTxt,false);
+          QSize txtSize = textSize(sb->font(),maxTxt);
           txtSize.rheight() += txtSize.height() % 2; // for vertical centering
           s = txtSize
               + QSize(fspec.left + (tspec_.vertical_spin_indicators ? 0
@@ -12254,9 +12423,9 @@ QSize Style::sizeFromContents(ContentsType type,
             QFont f;
             if (widget) f = widget->font();
             else f = QApplication::font();
-            QSize s1 = textSize(f, txt, false);
+            QSize s1 = textSize(f, txt);
             f.setWeight(lspec.boldness);
-            s = s + textSize(f, txt, false) - s1;
+            s = s + textSize(f, txt) - s1;
           }
           // consider a global min. width for push buttons as is done in "qcommonstyle.cpp"
           s = s.expandedTo(QSize(2*qMax(qMax(fspec.top,fspec.bottom),qMax(fspec.left,fspec.right))
@@ -12567,9 +12736,9 @@ QSize Style::sizeFromContents(ContentsType type,
             QFont f;
             if (widget) f = widget->font();
             else f = QApplication::font();
-            QSize s1 = textSize(f, opt->text, false);
+            QSize s1 = textSize(f, opt->text);
             f.setWeight(lspec.boldness);
-            s = s + textSize(f, opt->text, false) - s1;
+            s = s + textSize(f, opt->text) - s1;
           }
         }
         else if(opt->icon.isNull()) // nothing or only an arrow
@@ -12610,8 +12779,7 @@ QSize Style::sizeFromContents(ContentsType type,
         int iconSize = pixelMetric(PM_TabBarIconSize,option,widget);
         s = sizeCalculated(f,fspec,lspec,sspec,opt->text,
                            opt->icon.isNull() ? QSize() : QSize(iconSize,iconSize),
-                           Qt::ToolButtonTextBesideIcon,
-                           true); // for some reason, the real multiline text height is needed
+                           Qt::ToolButtonTextBesideIcon);
 
         bool verticalTabs = false;
         if (opt->shape == QTabBar::RoundedEast
@@ -12920,9 +13088,8 @@ QSize Style::sizeCalculated(const QFont &font,
                             const size_spec &sspec, // size spec
                             const QString &text,
                             const QSize iconSize,
-                            const Qt::ToolButtonStyle tialign, // text-icon alignment
-                            // use real heights of multiline texts?
-                            bool realHeight) const
+                            const Qt::ToolButtonStyle tialign // text-icon alignment
+                           ) const
 {
   /* text margins are taken into account without text too */
   QSize s;
@@ -12934,7 +13101,7 @@ QSize Style::sizeCalculated(const QFont &font,
     s.rheight() += qAbs(lspec.yshift)+lspec.depth;
   }
 
-  QSize ts = textSize(font, text, realHeight);
+  QSize ts = textSize(font, text);
   int tw = ts.width();
   int th = ts.height();
   th += th%2; // for vertical centering
@@ -13068,6 +13235,13 @@ QRect Style::subElementRect(SubElement element, const QStyleOption *option, cons
       return r;
     }
 
+    case SE_ToolBoxTabContents : {
+      if (option->direction == Qt::RightToLeft)
+        return option->rect.adjusted(30,0,0,0);
+      else
+        return option->rect.adjusted(0,0,-30,0);
+    }
+
     case SE_HeaderLabel : return option->rect;
 
     case SE_HeaderArrow : {
@@ -13188,7 +13362,7 @@ QRect Style::subElementRect(SubElement element, const QStyleOption *option, cons
         {
           QString maxTxt = spinMaxText(p);
           if (maxTxt.isEmpty()
-              || option->rect.width() < textSize(p->font(),maxTxt,false).width() + fspec.left
+              || option->rect.width() < textSize(p->font(),maxTxt).width() + fspec.left
                                         + (sspec.incrementW ? sspec.minW : 0)
                                         + (p->buttonSymbols() == QAbstractSpinBox::NoButtons ? fspec.right : 0)
               || (p->buttonSymbols() != QAbstractSpinBox::NoButtons
@@ -13881,9 +14055,9 @@ QRect Style::subElementRect(SubElement element, const QStyleOption *option, cons
             if (tab->rect.width() > w
                 && lspec.top+fspec.top + lspec.bottom+fspec.bottom > 0)
             {
-              qreal rDiff = (qreal)(lspec.top+fspec.top - lspec.bottom-fspec.bottom)
-                            / (qreal)(lspec.top+fspec.top + lspec.bottom+fspec.bottom);
-              offset = qRound((qreal)(tab->rect.width() - w) * rDiff / 2.0);
+              qreal rDiff = static_cast<qreal>(lspec.top+fspec.top - lspec.bottom-fspec.bottom)
+                            / static_cast<qreal>(lspec.top+fspec.top + lspec.bottom+fspec.bottom);
+              offset = qRound(static_cast<qreal>(tab->rect.width() - w) * rDiff / 2.0);
               if (tspec_.mirror_doc_tabs
                   && (tab->shape == QTabBar::RoundedSouth
                       || tab->shape == QTabBar::TriangularSouth))
@@ -13898,9 +14072,9 @@ QRect Style::subElementRect(SubElement element, const QStyleOption *option, cons
             if (tab->rect.width() > w
                 && lspec.top+fspec.top + lspec.bottom+fspec.bottom > 0)
             {
-              qreal rDiff = (qreal)(lspec.top+fspec.top - lspec.bottom-fspec.bottom)
-                            / (qreal)(lspec.top+fspec.top + lspec.bottom+fspec.bottom);
-              offset = qRound((qreal)(tab->rect.width() - w) * rDiff / 2.0);
+              qreal rDiff = static_cast<qreal>(lspec.top+fspec.top - lspec.bottom-fspec.bottom)
+                            / static_cast<qreal>(lspec.top+fspec.top + lspec.bottom+fspec.bottom);
+              offset = qRound(static_cast<qreal>(tab->rect.width() - w) * rDiff / 2.0);
               if (tspec_.mirror_doc_tabs)
                 offset *= -1;
             }
@@ -13909,9 +14083,9 @@ QRect Style::subElementRect(SubElement element, const QStyleOption *option, cons
             if (tab->rect.height() > h
                 && lspec.top+fspec.top + lspec.bottom+fspec.bottom > 0)
             {
-              qreal rDiff = (qreal)(lspec.top+fspec.top - lspec.bottom-fspec.bottom)
-                            / (qreal)(lspec.top+fspec.top + lspec.bottom+fspec.bottom);
-              offset = qRound((qreal)(tab->rect.height() - h) * rDiff / 2.0);
+              qreal rDiff = static_cast<qreal>(lspec.top+fspec.top - lspec.bottom-fspec.bottom)
+                            / static_cast<qreal>(lspec.top+fspec.top + lspec.bottom+fspec.bottom);
+              offset = qRound(static_cast<qreal>(tab->rect.height() - h) * rDiff / 2.0);
               if (tspec_.mirror_doc_tabs
                   && (tab->shape == QTabBar::RoundedSouth
                       || tab->shape == QTabBar::TriangularSouth))
@@ -14016,7 +14190,7 @@ QRect Style::subControlRect(ComplexControl control,
                 && maxTxt != sb->specialValueText())
             {
               maxTxt += QLatin1Char(' ');
-              int txtWidth = textSize(sb->font(),maxTxt,false).width();
+              int txtWidth = textSize(sb->font(),maxTxt).width();
               int rightFrame = w - txtWidth - 2*sw
                                - fspecLE.left - (sspecLE.incrementW ? sspecLE.minW : 0)
                                - 2; // for padding
@@ -14392,8 +14566,8 @@ QRect Style::subControlRect(ComplexControl control,
               angle = M_PI/2;
             else
             {
-              const qreal fraction(qreal(opt->sliderValue - opt->minimum)
-                                   / qreal(opt->maximum - opt->minimum));
+              const qreal fraction(static_cast<qreal>(opt->sliderValue - opt->minimum)
+                                   / static_cast<qreal>(opt->maximum - opt->minimum));
               if(opt->dialWrapping)
                 angle = M_PI*4/3 - fraction*2*M_PI; // angle = 1.5*M_PI - fraction*2*M_PI;
               else
@@ -14414,7 +14588,7 @@ QRect Style::subControlRect(ComplexControl control,
             QPoint center = r.center();
             int handleSize = r.width()/5;
             //const qreal radius = 0.5*(r.width() - handleSize);
-            const qreal radius = 0.5*(r.width() - 2*handleSize);
+            const qreal radius = 0.5*static_cast<qreal>(r.width() - 2*handleSize);
             center += QPoint(qRound(radius*qCos(angle)), -qRound(radius*qSin(angle)));
             r = QRect(r.x(), r.y(), handleSize, handleSize);
             r.moveCenter(center);
@@ -14978,7 +15152,7 @@ QPixmap Style::generatedIconPixmap(QIcon::Mode iconMode,
 
       for (int y=0; y<im.height(); ++y)
       {
-        QRgb *scanLine = (QRgb*)im.scanLine(y);
+        QRgb *scanLine = reinterpret_cast<QRgb*>(im.scanLine(y));
         for (int x=0; x<im.width(); ++x)
         {
           QRgb pixel = *scanLine;
@@ -14996,7 +15170,7 @@ QPixmap Style::generatedIconPixmap(QIcon::Mode iconMode,
       if (hspec_.no_selection_tint) break;
       QImage img = pixmap.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
       QColor color = option->palette.color(QPalette::Active, QPalette::Highlight);
-      color.setAlphaF(qreal(0.2)); // Qt sets it to 0.3
+      color.setAlphaF(0.2); // Qt sets it to 0.3
       QPainter painter(&img);
       painter.setCompositionMode(QPainter::CompositionMode_SourceAtop);
       painter.fillRect(0, 0, img.width(), img.height(), color);
@@ -15061,7 +15235,7 @@ QPixmap Style::tintedPixmap(const QStyleOption *option,
   if (tintPercentage <= 0) return px;
   QImage img = px.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
   QColor tintColor = option->palette.color(QPalette::Active, QPalette::Highlight);
-  tintColor.setAlphaF(tintPercentage/100);
+  tintColor.setAlphaF(tintPercentage/100.0);
   QPainter p(&img);
   p.setCompositionMode(QPainter::CompositionMode_SourceAtop);
   p.fillRect(0, 0, img.width(), img.height(), tintColor);
@@ -15076,7 +15250,7 @@ QPixmap Style::translucentPixmap(const QPixmap &px,
   QImage img = px.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
   img.fill(Qt::transparent);
   QPainter p(&img);
-  p.setOpacity(opacityPercentage/100);
+  p.setOpacity(opacityPercentage/100.0);
   p.drawPixmap(0, 0, px);
   p.end();
   return QPixmap::fromImage(img);

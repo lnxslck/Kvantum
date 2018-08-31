@@ -129,8 +129,12 @@ void Style::drawBg(QPainter *p, const QWidget *widget) const
     return; // Plasma FIXME: needed?
   QRect bgndRect(widget->rect());
   interior_spec ispec = getInteriorSpec("DialogTranslucent");
+  size_spec sspec = getSizeSpec("DialogTranslucent");
   if (ispec.element.isEmpty())
+  {
     ispec = getInteriorSpec("Dialog");
+    sspec = getSizeSpec("Dialog");
+  }
   if (!ispec.element.isEmpty()
       && !widget->windowFlags().testFlag(Qt::FramelessWindowHint)) // not a panel
   {
@@ -139,16 +143,24 @@ void Style::drawBg(QPainter *p, const QWidget *widget) const
       if (qobject_cast<QMenuBar*>(child) || qobject_cast<QToolBar*>(child))
       {
         ispec = getInteriorSpec("WindowTranslucent");
+        sspec = getSizeSpec("WindowTranslucent");
         if (ispec.element.isEmpty())
+        {
           ispec = getInteriorSpec("Window");
+          sspec = getSizeSpec("Window");
+        }
       }
     }
   }
   else
   {
     ispec = getInteriorSpec("WindowTranslucent");
+    sspec = getSizeSpec("WindowTranslucent");
     if (ispec.element.isEmpty())
+    {
       ispec = getInteriorSpec("Window");
+      sspec = getSizeSpec("Window");
+    }
   }
   frame_spec fspec;
   default_frame_spec(fspec);
@@ -165,9 +177,11 @@ void Style::drawBg(QPainter *p, const QWidget *widget) const
   if (ro > 0)
   {
     p->save();
-    p->setOpacity(1.0 - (qreal)tspec_.reduce_window_opacity/100.0);
+    p->setOpacity(1.0 - static_cast<qreal>(tspec_.reduce_window_opacity)/100.0);
   }
-  if (!renderInterior(p,bgndRect,fspec,ispec,ispec.element+suffix))
+  int dh = sspec.incrementH ? sspec.minH : qMax(sspec.minH - bgndRect.height(), 0);
+  int dw = sspec.incrementW ? sspec.minW : qMax(sspec.minW - bgndRect.width(), 0);
+  if (!renderInterior(p,bgndRect.adjusted(0,0,dw,dh),fspec,ispec,ispec.element+suffix))
   { // no window interior element but with reduced translucency
     p->fillRect(bgndRect, QApplication::palette().color(suffix.contains("-inactive")
                                                           ? QPalette::Inactive
@@ -627,7 +641,8 @@ bool Style::eventFilter(QObject *o, QEvent *e)
   case QEvent::StyleChange:
     if (QComboBox *combo = qobject_cast<QComboBox*>(w))
     {
-      if (qobject_cast<KvComboItemDelegate*>(combo->itemDelegate()))
+      if (combo->style() == this // WARNING: Otherwise, the delegate shouldn't be restored.
+          && qobject_cast<KvComboItemDelegate*>(combo->itemDelegate()))
       {
         /* QComboBoxPrivate::updateDelegate() won't work correctly
            on style change if the item delegate isn't restored here */
