@@ -1,3 +1,9 @@
+kvantum (0.10.9) nxos; urgency=high
+
+  * Kvantum 0.10.9. Typo in source changelog.
+
+ -- Uri Herrera <uri_herrera@nxos.org>  Fri, 31 Aug 2018 14:08:00 -0500
+
 kvantum (0.10.8) nxos; urgency=high
 
   * Kvantum 0.10.8.
