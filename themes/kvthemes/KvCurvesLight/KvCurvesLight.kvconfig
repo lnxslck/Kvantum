@@ -49,8 +49,8 @@ submenu_overlap=0
 
 [GeneralColors]
 window.color=#E5E5E6
-base.color=#FBFBFB
-alt.base.color=#F0F0F0
+base.color=#FBFBFB96
+alt.base.color=#0000000a
 button.color=#E5E5E6
 light.color=white
 mid.light.color=#ECECEC
@@ -181,10 +181,10 @@ frame=true
 interior=false
 frame.element=common
 interior.element=common
-frame.top=4
-frame.bottom=4
-frame.left=4
-frame.right=4
+frame.top=3
+frame.bottom=3
+frame.left=3
+frame.right=3
 frame.expansion=0
 
 [LineEdit]

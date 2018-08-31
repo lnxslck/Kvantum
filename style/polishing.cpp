@@ -107,6 +107,28 @@ static void setAppFont()
   }
 }
 
+/*static inline QColor overlayColor(QColor col, QColor overlayCol)
+{
+  if (!overlayCol.isValid()) return QColor(0,0,0);
+  if (!col.isValid()) return overlayCol;
+
+  qreal a1 = overlayCol.alphaF();
+  if (a1 == 1.0) return overlayCol;
+  qreal a0  = col.alphaF();
+
+  qreal a = (1.0 - a1) * a0 + a1;
+  qreal r = ((1.0 - a1) * a0 * col.redF() + a1 * overlayCol.redF()) / a;
+  qreal g = ((1.0 - a1) * a0 *col.greenF() + a1 * overlayCol.greenF()) / a;
+  qreal b = ((1.0 - a1) * a0 * col.blueF() + a1 * overlayCol.blueF()) / a;
+
+  QColor res;
+  res.setAlphaF(a);
+  res.setRedF(r);
+  res.setGreenF(g);
+  res.setBlueF(b);
+  return res;
+}*/
+
 void Style::polish(QWidget *widget)
 {
   if (!widget) return;
@@ -312,7 +334,8 @@ void Style::polish(QWidget *widget)
             }
           }
           /* the FramelessWindowHint or X11BypassWindowManagerHint flag
-             may be set after the window is created but before it's polished */
+             may be set after the window is created but before it's polished
+             (like in lxqt-leave) */
           else if (forcedTranslucency_.contains(widget))
           {
             forcedTranslucency_.remove(widget);
@@ -403,6 +426,25 @@ void Style::polish(QWidget *widget)
                 || (gp && gp->inherits("Fm::SidePane")))))
     {
       widget->setAutoFillBackground(false);
+    }
+  }
+
+  if ((isOpaque_ && qobject_cast<QAbstractScrollArea*>(widget)) // like in VLC play list view
+      || widget->inherits("QComboBoxPrivateContainer")
+      || widget->inherits("QTextEdit") || widget->inherits("QPlainTextEdit")
+      || qobject_cast<QAbstractItemView*>(getParent(widget,2)) // inside view-items
+      || widget->inherits("KSignalPlotter")) // probably has a bug
+  {
+    /* Text editors and some other widgets shouldn't have a translucent base color.
+       (line-edits are dealt with separately and only when needed.) */
+    QPalette palette = widget->palette();
+    QColor baseCol = palette.color(QPalette::Base);
+    if (baseCol.isValid() && baseCol != Qt::transparent // for rare cases, like that of Kaffeine's file widget
+        && baseCol.alpha() < 255)
+    {
+      baseCol.setAlpha(255);
+      palette.setColor(QPalette::Base,baseCol);
+      widget->setPalette(palette);
     }
   }
 
@@ -616,12 +658,14 @@ void Style::polish(QWidget *widget)
                  || vp->backgroundRole() == QPalette::Button))
       { // remove ugly flat backgrounds (when the window backround is styled)
         vp->setAutoFillBackground(false);
-        const QList<QWidget*> children = vp->findChildren<QWidget*>();
+        const QList<QWidget*> children = vp->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
         for (QWidget *child : children)
         {
-          if (child->parent() == vp && (child->backgroundRole() == QPalette::Window
-                                        || child->backgroundRole() == QPalette::Button))
+          if (child->backgroundRole() == QPalette::Window
+              || child->backgroundRole() == QPalette::Button)
+          {
             child->setAutoFillBackground(false);
+          }
         }
       }
       else
@@ -650,6 +694,9 @@ void Style::polish(QWidget *widget)
                          && (sa->inherits("Fm::DirTreeView") || (pw && pw->inherits("Fm::SidePane")))))))
         {
           QColor col = vp->palette().color(vp->backgroundRole());
+          QColor col1;
+          if (!tspec_.no_inactiveness)
+            col1 = vp->palette().color(QPalette::Inactive, vp->backgroundRole());
           if (col.isValid())
           {
             QPalette palette;
@@ -658,6 +705,8 @@ void Style::polish(QWidget *widget)
               sb->setAutoFillBackground(true);
               palette = sb->palette();
               palette.setColor(sb->backgroundRole(), col);
+              if (col1.isValid() && col1 != col)
+                palette.setColor(QPalette::Inactive, sb->backgroundRole(), col1);
               sb->setPalette(palette);
             }
             if (QScrollBar *sb = sa->verticalScrollBar())
@@ -665,6 +714,8 @@ void Style::polish(QWidget *widget)
               sb->setAutoFillBackground(true);
               palette = sb->palette();
               palette.setColor(sb->backgroundRole(), col);
+              if (col1.isValid() && col1 != col)
+                palette.setColor(QPalette::Inactive, sb->backgroundRole(), col1);
               sb->setPalette(palette);
             }
             // FIXME: is this needed?
@@ -760,7 +811,7 @@ void Style::polish(QWidget *widget)
                                    || forcedTranslucency_.contains(widget)))));
   if ((isMenuOrTooltip
           /* because of combo menus or round corners */
-       || (tspec_.isX11 && widget->inherits("QComboBoxPrivateContainer")))
+       || (/*tspec_.isX11 && */widget->inherits("QComboBoxPrivateContainer")))
       && !translucentWidgets_.contains(widget))
   {
     theme_spec tspec_now = settings_->getCompositeSpec();
@@ -779,7 +830,7 @@ void Style::polish(QWidget *widget)
         }
       }
 
-      if (tspec_.isX11)
+      if (tspec_.isX11 || widget->inherits("QTipLabel"))
       {
         if (!widget->testAttribute(Qt::WA_TranslucentBackground))
           widget->setAttribute(Qt::WA_TranslucentBackground); // Qt5 may need this too
@@ -881,13 +932,17 @@ void Style::polish(QPalette &palette)
       palette.setColor(QPalette::Inactive,QPalette::Base,col);
   }
 
-  /* An "inactiveAltBaseColor" would be inconsistent because
-     Qt would use it with inactive widgets inside active windows
-     while it uses the inactive base color only when the window
-     is inactive. This inconsistency is about a bug in Qt. */
   col = getFromRGBA(cspec_.altBaseColor);
   if (col.isValid())
-    palette.setColor(QPalette::AlternateBase,col);
+  {
+    palette.setColor(QPalette::Active,QPalette::AlternateBase,col);
+    palette.setColor(QPalette::Disabled,QPalette::AlternateBase,col);
+    col1 = getFromRGBA(cspec_.inactiveAltBaseColor);
+    if (col1.isValid() && hasInactiveness)
+      palette.setColor(QPalette::Inactive,QPalette::AlternateBase,col1);
+    else
+      palette.setColor(QPalette::Inactive,QPalette::AlternateBase,col);
+  }
 
   col = getFromRGBA(cspec_.buttonColor);
   if (col.isValid())
